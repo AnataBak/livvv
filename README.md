@@ -10,6 +10,7 @@ Minimal `Next.js` starter for talking to `gemini-3.1-flash-live-preview` with:
 - text input fallback
 - mobile-friendly layout
 - Vercel-ready server route for ephemeral tokens
+- optional one-time API key field stored only in the current browser tab
 
 ## Stack
 
@@ -44,6 +45,10 @@ Minimal `Next.js` starter for talking to `gemini-3.1-flash-live-preview` with:
    npm run dev
    ```
 
+5. Optional: instead of `.env.local`, paste your Gemini API key into the field on the page.
+   In that mode the app connects directly from the browser and keeps the key only in the current
+   tab session.
+
 ## Checks
 
 - `npm run test` - unit tests for message parsing, audio helpers, and token config
@@ -54,12 +59,15 @@ Minimal `Next.js` starter for talking to `gemini-3.1-flash-live-preview` with:
 ## Vercel deploy
 
 1. Import the project into Vercel.
-2. Add `GEMINI_API_KEY` in Project Settings -> Environment Variables.
+2. Optional: add `GEMINI_API_KEY` in Project Settings -> Environment Variables if you want to use
+   server-created ephemeral tokens.
 3. Deploy.
 
 ## Notes
 
 - The browser connects to Gemini Live with short-lived ephemeral tokens, so the real API key stays server-side.
+- If you paste an API key into the page, the browser connects directly with that key and the key is
+  kept only in `sessionStorage` for the current tab.
 - Audio input is converted to `audio/pcm;rate=16000`.
 - Camera frames are sent as `image/jpeg` once per second.
 - Gemini audio output is played back as 24kHz PCM.

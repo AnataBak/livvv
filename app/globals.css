@@ -99,9 +99,43 @@ input {
 
 .status-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 0.75rem;
   margin: 1rem 0;
+}
+
+.api-key-panel {
+  margin-bottom: 1rem;
+  padding: 0.9rem;
+  border-radius: 18px;
+  background: var(--panel-strong);
+  border: 1px solid var(--line);
+}
+
+.api-key-label {
+  display: block;
+  margin-bottom: 0.55rem;
+  font-weight: 700;
+}
+
+.api-key-row {
+  display: flex;
+  gap: 0.75rem;
+}
+
+.api-key-row input {
+  flex: 1;
+  min-height: 3rem;
+  padding: 0.85rem 1rem;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: white;
+  color: var(--text);
+}
+
+.api-key-note {
+  margin: 0.6rem 0 0;
+  color: var(--muted);
 }
 
 .status-card {
@@ -295,6 +329,10 @@ input {
   .status-grid,
   .console-grid {
     grid-template-columns: 1fr;
+  }
+
+  .api-key-row {
+    flex-direction: column;
   }
 
   .message-list {

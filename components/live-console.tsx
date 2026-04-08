@@ -22,12 +22,15 @@ type TokenPayload = {
   newSessionExpireTime: string | null;
 };
 
+type AuthMode = 'server-token' | 'tab-api-key';
+
 type EventItem = {
   id: string;
   text: string;
 };
 
 const initialEvents: EventItem[] = [{ id: 'event-0', text: 'Ready to start a Gemini Live session.' }];
+const API_KEY_STORAGE_KEY = 'gemini-live-api-key';
 
 export function LiveConsole() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -35,9 +38,11 @@ export function LiveConsole() {
   const [status, setStatus] = useState<'idle' | 'connecting' | 'active' | 'stopped' | 'error'>('idle');
   const [error, setError] = useState<string | null>(null);
   const [input, setInput] = useState('');
+  const [apiKeyInput, setApiKeyInput] = useState('');
   const [isMicEnabled, setIsMicEnabled] = useState(false);
   const [isCameraEnabled, setIsCameraEnabled] = useState(false);
   const [sessionExpiry, setSessionExpiry] = useState<string | null>(null);
+  const [authMode, setAuthMode] = useState<AuthMode>('server-token');
   const [isBusy, setIsBusy] = useState(false);
 
   const clientRef = useRef<GeminiLiveClient | null>(null);
@@ -129,6 +134,7 @@ export function LiveConsole() {
     stopCamera();
     clientRef.current?.close();
     clientRef.current = null;
+    setSessionExpiry(null);
     audioPlayerRef.current?.interrupt();
     finalizePendingMessage('assistant');
     finalizePendingMessage('user');
@@ -187,6 +193,33 @@ export function LiveConsole() {
     return data;
   }, []);
 
+  useEffect(() => {
+    const savedKey = window.sessionStorage.getItem(API_KEY_STORAGE_KEY);
+
+    if (savedKey) {
+      setApiKeyInput(savedKey);
+      setAuthMode('tab-api-key');
+      appendEvent('Loaded API key from this browser tab session.');
+    }
+  }, [appendEvent]);
+
+  useEffect(() => {
+    const trimmedKey = apiKeyInput.trim();
+
+    if (trimmedKey) {
+      window.sessionStorage.setItem(API_KEY_STORAGE_KEY, trimmedKey);
+      if (status === 'idle' || status === 'stopped' || status === 'error') {
+        setAuthMode('tab-api-key');
+      }
+      return;
+    }
+
+    window.sessionStorage.removeItem(API_KEY_STORAGE_KEY);
+    if (status === 'idle' || status === 'stopped' || status === 'error') {
+      setAuthMode('server-token');
+    }
+  }, [apiKeyInput, status]);
+
   const startMicrophone = useCallback(async () => {
     if (!clientRef.current) {
       throw new Error('Start the session before turning on the microphone.');
@@ -238,10 +271,7 @@ export function LiveConsole() {
       try {
         teardownSession();
         setStatus('connecting');
-        appendEvent('Requesting ephemeral token.');
-
-        const tokenData = await fetchEphemeralToken();
-        setSessionExpiry(tokenData.expireTime);
+        const trimmedApiKey = apiKeyInput.trim();
 
         if (!audioPlayerRef.current) {
           audioPlayerRef.current = new BrowserAudioPlayer();
@@ -249,24 +279,60 @@ export function LiveConsole() {
 
         await audioPlayerRef.current.ensureReady();
 
-        const client = new GeminiLiveClient(tokenData.token, {
-          onOpen: () => {
-            setStatus('active');
-            appendEvent('Connected to Gemini Live.');
-          },
-          onClose: (reason) => {
-            setStatus('stopped');
-            appendEvent(`Session closed: ${reason}`);
-          },
-          onEvent: (event) => {
-            void handleLiveEvent(event);
-          },
-          onError: (message) => {
-            setError(message);
-            setStatus('error');
-            appendEvent(message);
-          },
-        });
+        let client: GeminiLiveClient;
+
+        if (trimmedApiKey) {
+          setAuthMode('tab-api-key');
+          setSessionExpiry(null);
+          appendEvent('Using API key entered in this browser tab.');
+          client = new GeminiLiveClient(
+            { apiKey: trimmedApiKey },
+            {
+              onOpen: () => {
+                setStatus('active');
+                appendEvent('Connected to Gemini Live.');
+              },
+              onClose: (reason) => {
+                setStatus('stopped');
+                appendEvent(`Session closed: ${reason}`);
+              },
+              onEvent: (event) => {
+                void handleLiveEvent(event);
+              },
+              onError: (message) => {
+                setError(message);
+                setStatus('error');
+                appendEvent(message);
+              },
+            },
+          );
+        } else {
+          setAuthMode('server-token');
+          appendEvent('Requesting ephemeral token from the server route.');
+          const tokenData = await fetchEphemeralToken();
+          setSessionExpiry(tokenData.expireTime);
+          client = new GeminiLiveClient(
+            { accessToken: tokenData.token },
+            {
+              onOpen: () => {
+                setStatus('active');
+                appendEvent('Connected to Gemini Live.');
+              },
+              onClose: (reason) => {
+                setStatus('stopped');
+                appendEvent(`Session closed: ${reason}`);
+              },
+              onEvent: (event) => {
+                void handleLiveEvent(event);
+              },
+              onError: (message) => {
+                setError(message);
+                setStatus('error');
+                appendEvent(message);
+              },
+            },
+          );
+        }
 
         clientRef.current = client;
         await client.connect();
@@ -288,7 +354,7 @@ export function LiveConsole() {
         setIsBusy(false);
       }
     },
-    [appendEvent, fetchEphemeralToken, handleLiveEvent, startMicrophone, teardownSession],
+    [apiKeyInput, appendEvent, fetchEphemeralToken, handleLiveEvent, startMicrophone, teardownSession],
   );
 
   const stopConversation = useCallback(() => {
@@ -348,6 +414,12 @@ export function LiveConsole() {
     setInput('');
   }, [input, nextMessageId]);
 
+  const handleClearApiKey = useCallback(() => {
+    setApiKeyInput('');
+    window.sessionStorage.removeItem(API_KEY_STORAGE_KEY);
+    appendEvent('Saved tab API key removed.');
+  }, [appendEvent]);
+
   useEffect(() => {
     return () => {
       teardownSession();
@@ -356,6 +428,7 @@ export function LiveConsole() {
   }, [teardownSession]);
 
   const isSessionActive = status === 'active';
+  const effectiveAuthLabel = authMode === 'tab-api-key' ? 'Tab API key' : 'Server token';
 
   return (
     <section className="console-shell">
@@ -371,13 +444,47 @@ export function LiveConsole() {
             <strong data-state={status}>{status}</strong>
           </div>
           <div className="status-card">
+            <span className="status-label">Auth</span>
+            <strong>{effectiveAuthLabel}</strong>
+          </div>
+          <div className="status-card">
             <span className="status-label">Model</span>
             <strong>{LIVE_MODEL}</strong>
           </div>
           <div className="status-card">
-            <span className="status-label">Token expires</span>
-            <strong>{sessionExpiry ? new Date(sessionExpiry).toLocaleTimeString() : 'Not started'}</strong>
+            <span className="status-label">Session expires</span>
+            <strong>
+              {authMode === 'tab-api-key'
+                ? 'Managed by your API key'
+                : sessionExpiry
+                  ? new Date(sessionExpiry).toLocaleTimeString()
+                  : 'Not started'}
+            </strong>
           </div>
+        </div>
+
+        <div className="api-key-panel">
+          <label className="api-key-label" htmlFor="gemini-api-key">
+            One-time API key for this browser tab
+          </label>
+          <div className="api-key-row">
+            <input
+              id="gemini-api-key"
+              type="password"
+              value={apiKeyInput}
+              onChange={(event) => setApiKeyInput(event.target.value)}
+              placeholder="Paste Gemini API key to avoid Vercel env"
+              autoComplete="off"
+              spellCheck={false}
+            />
+            <button className="secondary-button" onClick={handleClearApiKey} disabled={!apiKeyInput}>
+              Clear key
+            </button>
+          </div>
+          <p className="api-key-note">
+            If this field is filled, the app connects directly from the browser and keeps the key only in
+            this tab session.
+          </p>
         </div>
 
         <div className="controls-row">

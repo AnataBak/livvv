@@ -8,14 +8,25 @@ type ClientCallbacks = {
   onError?: (message: string) => void;
 };
 
+type GeminiLiveClientAuth =
+  | { apiKey: string; accessToken?: never }
+  | { accessToken: string; apiKey?: never };
+
+export function buildLiveServiceUrl(auth: GeminiLiveClientAuth) {
+  if ('apiKey' in auth && typeof auth.apiKey === 'string') {
+    return `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent?key=${encodeURIComponent(auth.apiKey)}`;
+  }
+
+  return `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContentConstrained?access_token=${encodeURIComponent(auth.accessToken)}`;
+}
+
 export class GeminiLiveClient {
   private readonly serviceUrl: string;
   private socket: WebSocket | null = null;
   private callbacks: ClientCallbacks;
 
-  constructor(token: string, callbacks: ClientCallbacks = {}) {
-    this.serviceUrl =
-      `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContentConstrained?access_token=${token}`;
+  constructor(auth: GeminiLiveClientAuth, callbacks: ClientCallbacks = {}) {
+    this.serviceUrl = buildLiveServiceUrl(auth);
     this.callbacks = callbacks;
   }
 
