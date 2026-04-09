@@ -31,6 +31,7 @@ type EventItem = {
 
 const initialEvents: EventItem[] = [{ id: 'event-0', text: 'Ready to start a Gemini Live session.' }];
 const API_KEY_STORAGE_KEY = 'gemini-live-api-key';
+const TEMPERATURE_STORAGE_KEY = 'gemini-live-temperature';
 
 export function LiveConsole() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -45,6 +46,7 @@ export function LiveConsole() {
   const [sessionExpiry, setSessionExpiry] = useState<string | null>(null);
   const [authMode, setAuthMode] = useState<AuthMode>('server-token');
   const [isBusy, setIsBusy] = useState(false);
+  const [temperature, setTemperature] = useState<number>(0.6);
 
   const clientRef = useRef<GeminiLiveClient | null>(null);
   const audioPlayerRef = useRef<BrowserAudioPlayer | null>(null);
@@ -213,12 +215,23 @@ export function LiveConsole() {
   }, []);
 
   useEffect(() => {
-    const savedKey = window.sessionStorage.getItem(API_KEY_STORAGE_KEY);
+    const savedKey = window.localStorage.getItem(API_KEY_STORAGE_KEY);
 
     if (savedKey) {
       setApiKeyInput(savedKey);
       setAuthMode('tab-api-key');
-      appendEvent('Loaded API key from this browser tab session.');
+      appendEvent('Loaded API key from this browser.');
+    }
+  }, [appendEvent]);
+
+  useEffect(() => {
+    const savedTemp = window.localStorage.getItem(TEMPERATURE_STORAGE_KEY);
+    if (savedTemp) {
+      const parsedTemp = parseFloat(savedTemp);
+      if (!isNaN(parsedTemp) && parsedTemp >= 0 && parsedTemp <= 2) {
+        setTemperature(parsedTemp);
+        appendEvent(`Loaded temperature ${parsedTemp} from this browser.`);
+      }
     }
   }, [appendEvent]);
 
@@ -226,18 +239,22 @@ export function LiveConsole() {
     const trimmedKey = apiKeyInput.trim();
 
     if (trimmedKey) {
-      window.sessionStorage.setItem(API_KEY_STORAGE_KEY, trimmedKey);
+      window.localStorage.setItem(API_KEY_STORAGE_KEY, trimmedKey);
       if (status === 'idle' || status === 'stopped' || status === 'error') {
         setAuthMode('tab-api-key');
       }
       return;
     }
 
-    window.sessionStorage.removeItem(API_KEY_STORAGE_KEY);
+    window.localStorage.removeItem(API_KEY_STORAGE_KEY);
     if (status === 'idle' || status === 'stopped' || status === 'error') {
       setAuthMode('server-token');
     }
   }, [apiKeyInput, status]);
+
+  useEffect(() => {
+    window.localStorage.setItem(TEMPERATURE_STORAGE_KEY, temperature.toString());
+  }, [temperature]);
 
   const startMicrophone = useCallback(async () => {
     if (!clientRef.current) {
@@ -303,7 +320,7 @@ export function LiveConsole() {
         if (trimmedApiKey) {
           setAuthMode('tab-api-key');
           setSessionExpiry(null);
-          appendEvent('Using API key entered in this browser tab.');
+          appendEvent('Using API key entered in this browser.');
           client = new GeminiLiveClient(
             { apiKey: trimmedApiKey },
             {
@@ -324,6 +341,7 @@ export function LiveConsole() {
                 appendEvent(message);
               },
             },
+            temperature,
           );
         } else {
           setAuthMode('server-token');
@@ -350,6 +368,7 @@ export function LiveConsole() {
                 appendEvent(message);
               },
             },
+            temperature,
           );
         }
 
@@ -420,8 +439,8 @@ export function LiveConsole() {
 
   const handleClearApiKey = useCallback(() => {
     setApiKeyInput('');
-    window.sessionStorage.removeItem(API_KEY_STORAGE_KEY);
-    appendEvent('Saved tab API key removed.');
+    window.localStorage.removeItem(API_KEY_STORAGE_KEY);
+    appendEvent('Saved browser API key removed.');
   }, [appendEvent]);
 
   const handleSendText = useCallback(() => {
@@ -449,7 +468,7 @@ export function LiveConsole() {
   }, [teardownSession]);
 
   const isSessionActive = status === 'active';
-  const effectiveAuthLabel = authMode === 'tab-api-key' ? 'Tab API key' : 'Server token';
+  const effectiveAuthLabel = authMode === 'tab-api-key' ? 'Browser API key' : 'Server token';
 
   return (
     <section className="console-shell">
@@ -504,7 +523,7 @@ export function LiveConsole() {
 
         <div className="api-key-panel">
           <label className="api-key-label" htmlFor="gemini-api-key">
-            One-time API key for this browser tab
+            One-time API key for this browser
           </label>
           <div className="api-key-row">
             <input
@@ -521,8 +540,8 @@ export function LiveConsole() {
             </button>
           </div>
           <p className="api-key-note">
-            If this field is filled, the app connects directly from the browser and keeps the key only in
-            this tab session.
+            If this field is filled, the app connects directly from the browser and keeps the key stored in
+            this browser.
           </p>
         </div>
 
@@ -567,6 +586,29 @@ export function LiveConsole() {
         </div>
 
         {error ? <p className="error-banner">{error}</p> : null}
+      </div>
+
+      <div className="temperature-panel">
+        <div>
+          <p className="eyebrow">Settings</p>
+          <h3>Temperature</h3>
+        </div>
+        <div className="temperature-controls">
+          <label htmlFor="temperature-slider">Temperature: {temperature.toFixed(1)}</label>
+          <input
+            id="temperature-slider"
+            type="range"
+            min="0"
+            max="2"
+            step="0.1"
+            value={temperature}
+            onChange={(e) => setTemperature(parseFloat(e.target.value))}
+          />
+          <div className="temperature-labels">
+            <span>0.0 (Deterministic)</span>
+            <span>2.0 (Creative)</span>
+          </div>
+        </div>
       </div>
 
       <div className="console-grid">
