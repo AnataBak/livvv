@@ -41,6 +41,7 @@ export function LiveConsole() {
   const [apiKeyInput, setApiKeyInput] = useState('');
   const [isMicEnabled, setIsMicEnabled] = useState(false);
   const [isCameraEnabled, setIsCameraEnabled] = useState(false);
+  const [cameraFacingMode, setCameraFacingMode] = useState<'user' | 'environment'>('environment');
   const [sessionExpiry, setSessionExpiry] = useState<string | null>(null);
   const [authMode, setAuthMode] = useState<AuthMode>('server-token');
   const [isBusy, setIsBusy] = useState(false);
@@ -128,6 +129,24 @@ export function LiveConsole() {
     cameraRef.current?.stop(videoRef.current);
     setIsCameraEnabled(false);
   }, []);
+
+  const switchCamera = useCallback(async () => {
+    if (!clientRef.current) {
+      throw new Error('Start the session before switching camera.');
+    }
+
+    if (!videoRef.current || !cameraRef.current) {
+      throw new Error('Camera is not active.');
+    }
+
+    await cameraRef.current.switchCamera(videoRef.current, (frame, mimeType) => {
+      clientRef.current?.sendVideo(frame, mimeType);
+    });
+
+    const newMode = cameraRef.current.getCurrentFacingMode();
+    setCameraFacingMode(newMode);
+    appendEvent(`Camera switched to ${newMode === 'user' ? 'front' : 'back'}.`);
+  }, [appendEvent]);
 
   const teardownSession = useCallback(() => {
     stopMicrophone();
@@ -252,10 +271,10 @@ export function LiveConsole() {
 
     await cameraRef.current.start(videoRef.current, (frame, mimeType) => {
       clientRef.current?.sendVideo(frame, mimeType);
-    });
+    }, cameraFacingMode);
 
     setIsCameraEnabled(true);
-    appendEvent('Camera enabled.');
+    appendEvent(`Camera enabled (${cameraFacingMode === 'user' ? 'front' : 'back'}).`);
   }, [appendEvent]);
 
   const startSession = useCallback(
@@ -507,12 +526,40 @@ export function LiveConsole() {
           </p>
         </div>
 
+        <div className="camera-controls-row">
+          <label>
+            <input
+              type="radio"
+              name="camera"
+              value="environment"
+              checked={cameraFacingMode === 'environment'}
+              onChange={(e) => setCameraFacingMode(e.target.value as 'user' | 'environment')}
+              disabled={isCameraEnabled}
+            />
+            Back camera
+          </label>
+          <label>
+            <input
+              type="radio"
+              name="camera"
+              value="user"
+              checked={cameraFacingMode === 'user'}
+              onChange={(e) => setCameraFacingMode(e.target.value as 'user' | 'environment')}
+              disabled={isCameraEnabled}
+            />
+            Front camera
+          </label>
+        </div>
+
         <div className="controls-row">
           <button className="primary-button" onClick={() => void startSession()} disabled={isBusy}>
             Start session
           </button>
           <button className="toggle-button" onClick={() => void handleToggleCamera()} disabled={!isSessionActive}>
             {isCameraEnabled ? 'Camera on' : 'Camera off'}
+          </button>
+          <button className="toggle-button" onClick={() => void switchCamera()} disabled={!isCameraEnabled}>
+            {cameraFacingMode === 'user' ? 'Front' : 'Back'}
           </button>
         </div>
 

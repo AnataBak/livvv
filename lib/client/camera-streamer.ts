@@ -7,8 +7,10 @@ export class CameraStreamer {
   private intervalId: number | null = null;
   private canvas: HTMLCanvasElement | null = null;
   private context: CanvasRenderingContext2D | null = null;
+  private currentFacingMode: 'user' | 'environment' = 'user';
 
-  async start(videoElement: HTMLVideoElement, onFrame: FrameCallback) {
+  async start(videoElement: HTMLVideoElement, onFrame: FrameCallback, facingMode: 'user' | 'environment' = 'user') {
+    this.currentFacingMode = facingMode;
     if (!navigator.mediaDevices?.getUserMedia) {
       throw new Error('This browser does not support camera access.');
     }
@@ -17,7 +19,7 @@ export class CameraStreamer {
 
     this.mediaStream = await navigator.mediaDevices.getUserMedia({
       video: {
-        facingMode: 'user',
+        facingMode: this.currentFacingMode,
         width: { ideal: CAMERA_WIDTH },
         height: { ideal: CAMERA_HEIGHT },
       },
@@ -45,6 +47,21 @@ export class CameraStreamer {
       const [, base64Payload = ''] = dataUrl.split(',');
       onFrame(base64Payload, 'image/jpeg');
     }, intervalMs);
+  }
+
+  async switchCamera(videoElement: HTMLVideoElement, onFrame: FrameCallback) {
+    // Switch facing mode
+    this.currentFacingMode = this.currentFacingMode === 'user' ? 'environment' : 'user';
+
+    // Stop current stream
+    this.stop(videoElement);
+
+    // Restart with new facing mode
+    await this.start(videoElement, onFrame, this.currentFacingMode);
+  }
+
+  getCurrentFacingMode() {
+    return this.currentFacingMode;
   }
 
   stop(videoElement?: HTMLVideoElement | null) {

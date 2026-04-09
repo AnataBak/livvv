@@ -173,6 +173,21 @@ input {
   gap: 0.75rem;
 }
 
+.camera-controls-row {
+  display: flex;
+  gap: 1rem;
+  align-items: center;
+  margin-bottom: 1rem;
+}
+
+.camera-controls-row label {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+
 .compact-row {
   margin-top: 0.75rem;
 }
