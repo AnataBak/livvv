@@ -558,6 +558,9 @@ export function LiveConsole() {
           <button className="toggle-button" onClick={() => void handleToggleCamera()} disabled={!isSessionActive}>
             {isCameraEnabled ? 'Camera on' : 'Camera off'}
           </button>
+          <button className="toggle-button" onClick={() => void handleToggleMicrophone()} disabled={!isSessionActive}>
+            {isMicEnabled ? 'Mic on' : 'Mic off'}
+          </button>
           <button className="toggle-button" onClick={() => void switchCamera()} disabled={!isCameraEnabled}>
             {cameraFacingMode === 'user' ? 'Front' : 'Back'}
           </button>
