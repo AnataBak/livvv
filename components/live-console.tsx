@@ -32,6 +32,7 @@ type EventItem = {
 const initialEvents: EventItem[] = [{ id: 'event-0', text: 'Ready to start a Gemini Live session.' }];
 const API_KEY_STORAGE_KEY = 'gemini-live-api-key';
 const TEMPERATURE_STORAGE_KEY = 'gemini-live-temperature';
+const VOICE_STORAGE_KEY = 'gemini-live-voice';
 
 export function LiveConsole() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -47,6 +48,7 @@ export function LiveConsole() {
   const [authMode, setAuthMode] = useState<AuthMode>('server-token');
   const [isBusy, setIsBusy] = useState(false);
   const [temperature, setTemperature] = useState<number>(0.6);
+  const [voice, setVoice] = useState<string>('Puck');
 
   const clientRef = useRef<GeminiLiveClient | null>(null);
   const audioPlayerRef = useRef<BrowserAudioPlayer | null>(null);
@@ -236,6 +238,14 @@ export function LiveConsole() {
   }, [appendEvent]);
 
   useEffect(() => {
+    const savedVoice = window.localStorage.getItem(VOICE_STORAGE_KEY);
+    if (savedVoice) {
+      setVoice(savedVoice);
+      appendEvent(`Loaded voice ${savedVoice} from this browser.`);
+    }
+  }, [appendEvent]);
+
+  useEffect(() => {
     const trimmedKey = apiKeyInput.trim();
 
     if (trimmedKey) {
@@ -255,6 +265,10 @@ export function LiveConsole() {
   useEffect(() => {
     window.localStorage.setItem(TEMPERATURE_STORAGE_KEY, temperature.toString());
   }, [temperature]);
+
+  useEffect(() => {
+    window.localStorage.setItem(VOICE_STORAGE_KEY, voice);
+  }, [voice]);
 
   const startMicrophone = useCallback(async () => {
     if (!clientRef.current) {
@@ -342,6 +356,7 @@ export function LiveConsole() {
               },
             },
             temperature,
+            voice,
           );
         } else {
           setAuthMode('server-token');
@@ -369,6 +384,7 @@ export function LiveConsole() {
               },
             },
             temperature,
+            voice,
           );
         }
 
@@ -588,25 +604,42 @@ export function LiveConsole() {
         {error ? <p className="error-banner">{error}</p> : null}
       </div>
 
-      <div className="temperature-panel">
+      <div className="settings-panel">
         <div>
           <p className="eyebrow">Settings</p>
-          <h3>Temperature</h3>
+          <h3>Temperature & Voice</h3>
         </div>
-        <div className="temperature-controls">
-          <label htmlFor="temperature-slider">Temperature: {temperature.toFixed(1)}</label>
-          <input
-            id="temperature-slider"
-            type="range"
-            min="0"
-            max="2"
-            step="0.1"
-            value={temperature}
-            onChange={(e) => setTemperature(parseFloat(e.target.value))}
-          />
-          <div className="temperature-labels">
-            <span>0.0 (Deterministic)</span>
-            <span>2.0 (Creative)</span>
+        <div className="settings-controls">
+          <div className="temperature-section">
+            <label htmlFor="temperature-slider">Temperature: {temperature.toFixed(1)}</label>
+            <input
+              id="temperature-slider"
+              type="range"
+              min="0"
+              max="2"
+              step="0.1"
+              value={temperature}
+              onChange={(e) => setTemperature(parseFloat(e.target.value))}
+            />
+            <div className="temperature-labels">
+              <span>0.0 (Deterministic)</span>
+              <span>2.0 (Creative)</span>
+            </div>
+          </div>
+          <div className="voice-section">
+            <label htmlFor="voice-select">Voice:</label>
+            <select
+              id="voice-select"
+              value={voice}
+              onChange={(e) => setVoice(e.target.value)}
+            >
+              <option value="Puck">Puck</option>
+              <option value="KORE">KORE</option>
+              <option value="Aoede">Aoede</option>
+              <option value="Charon">Charon</option>
+              <option value="Fenrir">Fenrir</option>
+              <option value="Kore">Kore</option>
+            </select>
           </div>
         </div>
       </div>

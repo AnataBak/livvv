@@ -138,7 +138,7 @@ input {
   color: var(--muted);
 }
 
-.temperature-panel {
+.settings-panel {
   padding: 1rem;
   margin-top: 1rem;
   background: var(--panel);
@@ -148,17 +148,26 @@ input {
   backdrop-filter: blur(16px);
 }
 
-.temperature-controls {
+.settings-controls {
   margin-top: 0.5rem;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
 }
 
-.temperature-controls label {
-  display: block;
-  margin-bottom: 0.5rem;
+.temperature-section,
+.voice-section {
+  display: flex;
+  flex-direction: column;
+}
+
+.temperature-section label,
+.voice-section label {
   font-weight: 700;
+  margin-bottom: 0.5rem;
 }
 
-.temperature-controls input[type="range"] {
+.temperature-section input[type="range"] {
   width: 100%;
   margin-bottom: 0.5rem;
 }
@@ -168,6 +177,21 @@ input {
   justify-content: space-between;
   font-size: 0.8rem;
   color: var(--muted);
+}
+
+.voice-section select {
+  padding: 0.5rem;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel-strong);
+  color: var(--text);
+  font-size: 1rem;
+}
+
+@media (max-width: 640px) {
+  .settings-controls {
+    grid-template-columns: 1fr;
+  }
 }
 
 .status-card {

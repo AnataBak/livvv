@@ -9,14 +9,16 @@ describe('live session config', () => {
     expect(payload.setup.model).toBe(`models/${LIVE_MODEL}`);
     expect(payload.setup.generationConfig.responseModalities).toEqual(['AUDIO']);
     expect(payload.setup.generationConfig.temperature).toBe(0.6);
+    expect(payload.setup.generationConfig.speechConfig.voiceConfig.prebuiltVoiceConfig.voiceName).toBe('Puck');
     expect(payload.setup.inputAudioTranscription).toEqual({});
     expect(payload.setup.outputAudioTranscription).toEqual({});
   });
 
-  it('builds the browser websocket setup payload with custom temperature', () => {
-    const payload = buildSessionSetupMessage(1.2);
+  it('builds the browser websocket setup payload with custom temperature and voice', () => {
+    const payload = buildSessionSetupMessage(1.2, 'KORE');
 
     expect(payload.setup.generationConfig.temperature).toBe(1.2);
+    expect(payload.setup.generationConfig.speechConfig.voiceConfig.prebuiltVoiceConfig.voiceName).toBe('KORE');
   });
 
   it('builds a constrained ephemeral token request', () => {

@@ -8,7 +8,7 @@ export const CAMERA_HEIGHT = 480;
 export const SYSTEM_INSTRUCTION =
   'You are a concise, friendly live voice assistant. Answer clearly and keep responses short unless the user asks for detail.';
 
-export function buildSessionSetupMessage(temperature: number = 0.6) {
+export function buildSessionSetupMessage(temperature: number = 0.6, voice: string = LIVE_VOICE) {
   return {
     setup: {
       model: `models/${LIVE_MODEL}`,
@@ -18,7 +18,7 @@ export function buildSessionSetupMessage(temperature: number = 0.6) {
         speechConfig: {
           voiceConfig: {
             prebuiltVoiceConfig: {
-              voiceName: LIVE_VOICE,
+              voiceName: voice,
             },
           },
         },
