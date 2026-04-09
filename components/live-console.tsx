@@ -567,6 +567,27 @@ export function LiveConsole() {
       </div>
 
       <div className="console-grid">
+        <div className="console-panel side-panel">
+          <div>
+            <p className="eyebrow">Camera</p>
+            <h3>Preview</h3>
+          </div>
+
+          <div className="preview-frame">
+            {isCameraEnabled ? null : <span className="preview-placeholder">Camera is off</span>}
+            <video ref={videoRef} autoPlay muted playsInline className={isCameraEnabled ? 'video-active' : 'video-idle'} />
+          </div>
+
+          <div>
+            <p className="eyebrow">Recent events</p>
+            <ul className="event-list">
+              {events.map((entry) => (
+                <li key={entry.id}>{entry.text}</li>
+              ))}
+            </ul>
+          </div>
+        </div>
+
         <div className="console-panel transcript-panel">
           <div className="panel-header">
             <div>
@@ -606,27 +627,6 @@ export function LiveConsole() {
             <button className="primary-button" onClick={handleSendText} disabled={!isSessionActive || !input.trim()}>
               Send
             </button>
-          </div>
-        </div>
-
-        <div className="console-panel side-panel">
-          <div>
-            <p className="eyebrow">Camera</p>
-            <h3>Preview</h3>
-          </div>
-
-          <div className="preview-frame">
-            {isCameraEnabled ? null : <span className="preview-placeholder">Camera is off</span>}
-            <video ref={videoRef} autoPlay muted playsInline className={isCameraEnabled ? 'video-active' : 'video-idle'} />
-          </div>
-
-          <div>
-            <p className="eyebrow">Recent events</p>
-            <ul className="event-list">
-              {events.map((entry) => (
-                <li key={entry.id}>{entry.text}</li>
-              ))}
-            </ul>
           </div>
         </div>
       </div>
