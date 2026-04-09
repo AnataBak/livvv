@@ -335,6 +335,7 @@ export function LiveConsole() {
           setAuthMode('tab-api-key');
           setSessionExpiry(null);
           appendEvent('Using API key entered in this browser.');
+          appendEvent(`Session parameters: Temperature ${temperature}, Voice ${voice}.`);
           client = new GeminiLiveClient(
             { apiKey: trimmedApiKey },
             {
@@ -361,6 +362,7 @@ export function LiveConsole() {
         } else {
           setAuthMode('server-token');
           appendEvent('Requesting ephemeral token from the server route.');
+          appendEvent(`Session parameters: Temperature ${temperature}, Voice ${voice}.`);
           const tokenData = await fetchEphemeralToken();
           setSessionExpiry(tokenData.expireTime);
           client = new GeminiLiveClient(
