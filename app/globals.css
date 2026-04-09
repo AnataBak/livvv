@@ -249,6 +249,16 @@ input {
   margin-bottom: 0.9rem;
 }
 
+.events-panel {
+  margin-top: 1rem;
+  padding: 1rem;
+}
+
+.events-panel .event-list {
+  max-height: 12rem;
+  overflow: auto;
+}
+
 .message-list {
   min-height: 22rem;
   max-height: 30rem;

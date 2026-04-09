@@ -577,15 +577,6 @@ export function LiveConsole() {
             {isCameraEnabled ? null : <span className="preview-placeholder">Camera is off</span>}
             <video ref={videoRef} autoPlay muted playsInline className={isCameraEnabled ? 'video-active' : 'video-idle'} />
           </div>
-
-          <div>
-            <p className="eyebrow">Recent events</p>
-            <ul className="event-list">
-              {events.map((entry) => (
-                <li key={entry.id}>{entry.text}</li>
-              ))}
-            </ul>
-          </div>
         </div>
 
         <div className="console-panel transcript-panel">
@@ -629,6 +620,20 @@ export function LiveConsole() {
             </button>
           </div>
         </div>
+      </div>
+
+      <div className="console-panel events-panel">
+        <div className="panel-header">
+          <div>
+            <p className="eyebrow">System</p>
+            <h3>Recent events</h3>
+          </div>
+        </div>
+        <ul className="event-list">
+          {events.map((entry) => (
+            <li key={entry.id}>{entry.text}</li>
+          ))}
+        </ul>
       </div>
     </section>
   );
