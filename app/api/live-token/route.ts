@@ -3,7 +3,7 @@ import { GoogleGenAI } from '@google/genai';
 import { LIVE_MODEL } from '@/lib/live-session-config';
 import { buildLiveTokenConfig, getGeminiApiKey } from '@/lib/server/live-token';
 
-export const runtime = 'nodejs';
+export const runtime = 'edge';
 
 export async function POST() {
   try {

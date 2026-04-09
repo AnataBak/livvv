@@ -316,7 +316,7 @@ export function LiveConsole() {
             {
               onOpen: () => {
                 setStatus('active');
-                appendEvent('Connected to Gemini Live.');
+                appendEvent('Connected to Gemini Live via proxy.');
               },
               onClose: (reason) => {
                 setStatus('stopped');
@@ -399,6 +399,12 @@ export function LiveConsole() {
     }
   }, [appendEvent, isCameraEnabled, startCamera, stopCamera]);
 
+  const handleClearApiKey = useCallback(() => {
+    setApiKeyInput('');
+    window.sessionStorage.removeItem(API_KEY_STORAGE_KEY);
+    appendEvent('Saved tab API key removed.');
+  }, [appendEvent]);
+
   const handleSendText = useCallback(() => {
     const trimmed = input.trim();
 
@@ -414,11 +420,7 @@ export function LiveConsole() {
     setInput('');
   }, [input, nextMessageId]);
 
-  const handleClearApiKey = useCallback(() => {
-    setApiKeyInput('');
-    window.sessionStorage.removeItem(API_KEY_STORAGE_KEY);
-    appendEvent('Saved tab API key removed.');
-  }, [appendEvent]);
+
 
   useEffect(() => {
     return () => {
@@ -463,6 +465,24 @@ export function LiveConsole() {
           </div>
         </div>
 
+
+
+        <div className="controls-row">
+          <button className="primary-button" onClick={() => void startSession()} disabled={isBusy}>
+            Start session
+          </button>
+          <button className="secondary-button" onClick={stopConversation} disabled={!clientRef.current}>
+            Stop
+          </button>
+          <button
+            className="secondary-button"
+            onClick={() => void startSession({ resetConversation: true })}
+            disabled={isBusy}
+          >
+            New dialog
+          </button>
+        </div>
+
         <div className="api-key-panel">
           <label className="api-key-label" htmlFor="gemini-api-key">
             One-time API key for this browser tab
@@ -490,22 +510,6 @@ export function LiveConsole() {
         <div className="controls-row">
           <button className="primary-button" onClick={() => void startSession()} disabled={isBusy}>
             Start session
-          </button>
-          <button className="secondary-button" onClick={stopConversation} disabled={!clientRef.current}>
-            Stop
-          </button>
-          <button
-            className="secondary-button"
-            onClick={() => void startSession({ resetConversation: true })}
-            disabled={isBusy}
-          >
-            New dialog
-          </button>
-        </div>
-
-        <div className="controls-row compact-row">
-          <button className="toggle-button" onClick={() => void handleToggleMicrophone()} disabled={!isSessionActive}>
-            {isMicEnabled ? 'Mic on' : 'Mic off'}
           </button>
           <button className="toggle-button" onClick={() => void handleToggleCamera()} disabled={!isSessionActive}>
             {isCameraEnabled ? 'Camera on' : 'Camera off'}
