@@ -29,10 +29,17 @@ type EventItem = {
   text: string;
 };
 
-const initialEvents: EventItem[] = [{ id: 'event-0', text: 'Ready to start a Gemini Live session.' }];
+const initialEvents: EventItem[] = [{ id: 'event-0', text: 'Все готово к запуску сессии Gemini Live.' }];
 const API_KEY_STORAGE_KEY = 'gemini-live-api-key';
 const TEMPERATURE_STORAGE_KEY = 'gemini-live-temperature';
 const VOICE_STORAGE_KEY = 'gemini-live-voice';
+const STATUS_LABELS: Record<'idle' | 'connecting' | 'active' | 'stopped' | 'error', string> = {
+  idle: 'Ожидание',
+  connecting: 'Подключение',
+  active: 'Активна',
+  stopped: 'Остановлена',
+  error: 'Ошибка',
+};
 
 export function LiveConsole() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -64,7 +71,8 @@ export function LiveConsole() {
 
   const appendEvent = useCallback((message: string) => {
     eventCounterRef.current += 1;
-    setEvents((current) => [{ id: `event-${eventCounterRef.current}`, text: message }, ...current].slice(0, 8));
+    const eventId = `event-${eventCounterRef.current}`;
+    setEvents((current) => [{ id: eventId, text: message }, ...current].slice(0, 8));
   }, []);
 
   const nextMessageId = useCallback(() => {
@@ -136,11 +144,11 @@ export function LiveConsole() {
 
   const switchCamera = useCallback(async () => {
     if (!clientRef.current) {
-      throw new Error('Start the session before switching camera.');
+      throw new Error('Сначала запустите сессию, а потом переключайте камеру.');
     }
 
     if (!videoRef.current || !cameraRef.current) {
-      throw new Error('Camera is not active.');
+      throw new Error('Камера сейчас не активна.');
     }
 
     await cameraRef.current.switchCamera(videoRef.current, (frame, mimeType) => {
@@ -149,7 +157,7 @@ export function LiveConsole() {
 
     const newMode = cameraRef.current.getCurrentFacingMode();
     setCameraFacingMode(newMode);
-    appendEvent(`Camera switched to ${newMode === 'user' ? 'front' : 'back'}.`);
+    appendEvent(`Камера переключена на ${newMode === 'user' ? 'фронтальную' : 'основную'}.`);
   }, [appendEvent]);
 
   const teardownSession = useCallback(() => {
@@ -167,7 +175,7 @@ export function LiveConsole() {
     async (event: LiveServerEvent) => {
       switch (event.type) {
         case 'setup-complete':
-          appendEvent('Gemini Live session is ready.');
+          appendEvent('Сессия Gemini Live готова.');
           return;
         case 'audio':
           await audioPlayerRef.current?.enqueueBase64Pcm(event.data);
@@ -186,16 +194,16 @@ export function LiveConsole() {
           return;
         case 'interrupted':
           audioPlayerRef.current?.interrupt();
-          appendEvent('Model response interrupted.');
+          appendEvent('Ответ модели был прерван.');
           return;
         case 'turn-complete':
           finalizePendingMessage('assistant');
-          appendEvent('Turn completed.');
+          appendEvent('Ход завершён.');
           return;
         case 'error':
           setError(event.message);
           setStatus('error');
-          appendEvent(`Gemini error: ${event.message}`);
+          appendEvent(`Ошибка Gemini: ${event.message}`);
           return;
       }
     },
@@ -210,7 +218,7 @@ export function LiveConsole() {
     const data = (await response.json()) as TokenPayload | { error: string };
 
     if (!response.ok || !('token' in data)) {
-      throw new Error('error' in data ? data.error : 'Failed to get an ephemeral token.');
+      throw new Error('error' in data ? data.error : 'Не удалось получить временный токен.');
     }
 
     return data;
@@ -222,7 +230,7 @@ export function LiveConsole() {
     if (savedKey) {
       setApiKeyInput(savedKey);
       setAuthMode('tab-api-key');
-      appendEvent('Loaded API key from this browser.');
+      appendEvent('API-ключ загружен из этого браузера.');
     }
   }, [appendEvent]);
 
@@ -232,7 +240,7 @@ export function LiveConsole() {
       const parsedTemp = parseFloat(savedTemp);
       if (!isNaN(parsedTemp) && parsedTemp >= 0 && parsedTemp <= 2) {
         setTemperature(parsedTemp);
-        appendEvent(`Loaded temperature ${parsedTemp} from this browser.`);
+        appendEvent(`Температура ${parsedTemp} загружена из этого браузера.`);
       }
     }
   }, [appendEvent]);
@@ -241,7 +249,7 @@ export function LiveConsole() {
     const savedVoice = window.localStorage.getItem(VOICE_STORAGE_KEY);
     if (savedVoice) {
       setVoice(savedVoice);
-      appendEvent(`Loaded voice ${savedVoice} from this browser.`);
+      appendEvent(`Голос ${savedVoice} загружен из этого браузера.`);
     }
   }, [appendEvent]);
 
@@ -272,7 +280,7 @@ export function LiveConsole() {
 
   const startMicrophone = useCallback(async () => {
     if (!clientRef.current) {
-      throw new Error('Start the session before turning on the microphone.');
+      throw new Error('Сначала запустите сессию, а потом включайте микрофон.');
     }
 
     if (!microphoneRef.current) {
@@ -284,16 +292,16 @@ export function LiveConsole() {
     });
 
     setIsMicEnabled(true);
-    appendEvent('Microphone enabled.');
+    appendEvent('Микрофон включен.');
   }, [appendEvent]);
 
   const startCamera = useCallback(async () => {
     if (!clientRef.current) {
-      throw new Error('Start the session before turning on the camera.');
+      throw new Error('Сначала запустите сессию, а потом включайте камеру.');
     }
 
     if (!videoRef.current) {
-      throw new Error('Camera preview element is missing.');
+      throw new Error('Не найден элемент предпросмотра камеры.');
     }
 
     if (!cameraRef.current) {
@@ -305,7 +313,7 @@ export function LiveConsole() {
     }, cameraFacingMode);
 
     setIsCameraEnabled(true);
-    appendEvent(`Camera enabled (${cameraFacingMode === 'user' ? 'front' : 'back'}).`);
+    appendEvent(`Камера включена (${cameraFacingMode === 'user' ? 'фронтальная' : 'основная'}).`);
   }, [appendEvent]);
 
   const startSession = useCallback(
@@ -316,6 +324,7 @@ export function LiveConsole() {
       if (options?.resetConversation) {
         setMessages([]);
         setEvents(initialEvents);
+        eventCounterRef.current = 0;
       }
 
       try {
@@ -334,18 +343,18 @@ export function LiveConsole() {
         if (trimmedApiKey) {
           setAuthMode('tab-api-key');
           setSessionExpiry(null);
-          appendEvent('Using API key entered in this browser.');
-          appendEvent(`Session parameters: Temperature ${temperature}, Voice ${voice}.`);
+          appendEvent('Используется API-ключ, введённый в этом браузере.');
+          appendEvent(`Параметры сессии: температура ${temperature}, голос ${voice}.`);
           client = new GeminiLiveClient(
             { apiKey: trimmedApiKey },
             {
               onOpen: () => {
                 setStatus('active');
-                appendEvent('Connected to Gemini Live.');
+                appendEvent('Подключение к Gemini Live установлено.');
               },
               onClose: (reason) => {
                 setStatus('stopped');
-                appendEvent(`Session closed: ${reason}`);
+                appendEvent(`Сессия закрыта: ${reason}`);
               },
               onEvent: (event) => {
                 void handleLiveEvent(event);
@@ -361,8 +370,8 @@ export function LiveConsole() {
           );
         } else {
           setAuthMode('server-token');
-          appendEvent('Requesting ephemeral token from the server route.');
-          appendEvent(`Session parameters: Temperature ${temperature}, Voice ${voice}.`);
+          appendEvent('Запрашивается временный токен через серверный маршрут.');
+          appendEvent(`Параметры сессии: температура ${temperature}, голос ${voice}.`);
           const tokenData = await fetchEphemeralToken();
           setSessionExpiry(tokenData.expireTime);
           client = new GeminiLiveClient(
@@ -370,11 +379,11 @@ export function LiveConsole() {
             {
               onOpen: () => {
                 setStatus('active');
-                appendEvent('Connected to Gemini Live via proxy.');
+                appendEvent('Подключение к Gemini Live через прокси установлено.');
               },
               onClose: (reason) => {
                 setStatus('stopped');
-                appendEvent(`Session closed: ${reason}`);
+                appendEvent(`Сессия закрыта: ${reason}`);
               },
               onEvent: (event) => {
                 void handleLiveEvent(event);
@@ -396,13 +405,13 @@ export function LiveConsole() {
         try {
           await startMicrophone();
         } catch (micError) {
-          const message = micError instanceof Error ? micError.message : 'Microphone could not start.';
+          const message = micError instanceof Error ? micError.message : 'Не удалось запустить микрофон.';
           setError(message);
           appendEvent(message);
         }
       } catch (sessionError) {
         const message =
-          sessionError instanceof Error ? sessionError.message : 'Session could not be started.';
+          sessionError instanceof Error ? sessionError.message : 'Не удалось запустить сессию.';
         setError(message);
         setStatus('error');
         appendEvent(message);
@@ -416,7 +425,7 @@ export function LiveConsole() {
   const stopConversation = useCallback(() => {
     teardownSession();
     setStatus('stopped');
-    appendEvent('Conversation stopped.');
+    appendEvent('Диалог остановлен.');
   }, [appendEvent, teardownSession]);
 
   const handleToggleMicrophone = useCallback(async () => {
@@ -425,13 +434,13 @@ export function LiveConsole() {
     try {
       if (isMicEnabled) {
         stopMicrophone();
-        appendEvent('Microphone disabled.');
+        appendEvent('Микрофон выключен.');
         return;
       }
 
       await startMicrophone();
     } catch (toggleError) {
-      const message = toggleError instanceof Error ? toggleError.message : 'Microphone toggle failed.';
+      const message = toggleError instanceof Error ? toggleError.message : 'Не удалось переключить микрофон.';
       setError(message);
       appendEvent(message);
     }
@@ -443,13 +452,13 @@ export function LiveConsole() {
     try {
       if (isCameraEnabled) {
         stopCamera();
-        appendEvent('Camera disabled.');
+        appendEvent('Камера выключена.');
         return;
       }
 
       await startCamera();
     } catch (toggleError) {
-      const message = toggleError instanceof Error ? toggleError.message : 'Camera toggle failed.';
+      const message = toggleError instanceof Error ? toggleError.message : 'Не удалось переключить камеру.';
       setError(message);
       appendEvent(message);
     }
@@ -458,7 +467,7 @@ export function LiveConsole() {
   const handleClearApiKey = useCallback(() => {
     setApiKeyInput('');
     window.localStorage.removeItem(API_KEY_STORAGE_KEY);
-    appendEvent('Saved browser API key removed.');
+    appendEvent('Сохранённый API-ключ браузера удалён.');
   }, [appendEvent]);
 
   const handleSendText = useCallback(() => {
@@ -486,37 +495,37 @@ export function LiveConsole() {
   }, [teardownSession]);
 
   const isSessionActive = status === 'active';
-  const effectiveAuthLabel = authMode === 'tab-api-key' ? 'Browser API key' : 'Server token';
+  const effectiveAuthLabel = authMode === 'tab-api-key' ? 'API-ключ браузера' : 'Серверный токен';
 
   return (
     <section className="console-shell">
       <div className="console-panel status-panel">
         <div>
-          <p className="eyebrow">Session</p>
+          <p className="eyebrow">Сессия</p>
           <h2>Gemini 3.1 Flash Live Preview</h2>
         </div>
 
         <div className="status-grid">
           <div className="status-card">
-            <span className="status-label">State</span>
-            <strong data-state={status}>{status}</strong>
+            <span className="status-label">Состояние</span>
+            <strong data-state={status}>{STATUS_LABELS[status]}</strong>
           </div>
           <div className="status-card">
-            <span className="status-label">Auth</span>
+            <span className="status-label">Авторизация</span>
             <strong>{effectiveAuthLabel}</strong>
           </div>
           <div className="status-card">
-            <span className="status-label">Model</span>
+            <span className="status-label">Модель</span>
             <strong>{LIVE_MODEL}</strong>
           </div>
           <div className="status-card">
-            <span className="status-label">Session expires</span>
+            <span className="status-label">Сессия истекает</span>
             <strong>
               {authMode === 'tab-api-key'
-                ? 'Managed by your API key'
+                ? 'Управляется вашим API-ключом'
                 : sessionExpiry
                   ? new Date(sessionExpiry).toLocaleTimeString()
-                  : 'Not started'}
+                  : 'Ещё не запущена'}
             </strong>
           </div>
         </div>
@@ -525,23 +534,23 @@ export function LiveConsole() {
 
         <div className="controls-row">
           <button className="primary-button" onClick={() => void startSession()} disabled={isBusy}>
-            Start session
+            Запустить сессию
           </button>
           <button className="secondary-button" onClick={stopConversation} disabled={!clientRef.current}>
-            Stop
+            Остановить
           </button>
           <button
             className="secondary-button"
             onClick={() => void startSession({ resetConversation: true })}
             disabled={isBusy}
           >
-            New dialog
+            Новый диалог
           </button>
         </div>
 
         <div className="api-key-panel">
           <label className="api-key-label" htmlFor="gemini-api-key">
-            One-time API key for this browser
+            Одноразовый API-ключ для этого браузера
           </label>
           <div className="api-key-row">
             <input
@@ -549,17 +558,17 @@ export function LiveConsole() {
               type="password"
               value={apiKeyInput}
               onChange={(event) => setApiKeyInput(event.target.value)}
-              placeholder="Paste Gemini API key to avoid Vercel env"
+              placeholder="Вставьте API-ключ Gemini, чтобы не использовать переменные Vercel"
               autoComplete="off"
               spellCheck={false}
             />
             <button className="secondary-button" onClick={handleClearApiKey} disabled={!apiKeyInput}>
-              Clear key
+              Очистить ключ
             </button>
           </div>
           <p className="api-key-note">
-            If this field is filled, the app connects directly from the browser and keeps the key stored in
-            this browser.
+            Если поле заполнено, приложение подключается напрямую из браузера и хранит ключ только в этом
+            браузере.
           </p>
         </div>
 
@@ -573,7 +582,7 @@ export function LiveConsole() {
               onChange={(e) => setCameraFacingMode(e.target.value as 'user' | 'environment')}
               disabled={isCameraEnabled}
             />
-            Back camera
+            Основная камера
           </label>
           <label>
             <input
@@ -584,22 +593,22 @@ export function LiveConsole() {
               onChange={(e) => setCameraFacingMode(e.target.value as 'user' | 'environment')}
               disabled={isCameraEnabled}
             />
-            Front camera
+            Фронтальная камера
           </label>
         </div>
 
         <div className="controls-row">
           <button className="primary-button" onClick={() => void startSession()} disabled={isBusy}>
-            Start session
+            Запустить сессию
           </button>
           <button className="toggle-button" onClick={() => void handleToggleCamera()} disabled={!isSessionActive}>
-            {isCameraEnabled ? 'Camera on' : 'Camera off'}
+            {isCameraEnabled ? 'Камера включена' : 'Камера выключена'}
           </button>
           <button className="toggle-button" onClick={() => void handleToggleMicrophone()} disabled={!isSessionActive}>
-            {isMicEnabled ? 'Mic on' : 'Mic off'}
+            {isMicEnabled ? 'Микрофон включен' : 'Микрофон выключен'}
           </button>
           <button className="toggle-button" onClick={() => void switchCamera()} disabled={!isCameraEnabled}>
-            {cameraFacingMode === 'user' ? 'Front' : 'Back'}
+            {cameraFacingMode === 'user' ? 'Фронтальная' : 'Основная'}
           </button>
         </div>
 
@@ -608,12 +617,12 @@ export function LiveConsole() {
 
       <div className="settings-panel">
         <div>
-          <p className="eyebrow">Settings</p>
-          <h3>Temperature & Voice</h3>
+          <p className="eyebrow">Настройки</p>
+          <h3>Температура и голос</h3>
         </div>
         <div className="settings-controls">
           <div className="temperature-section">
-            <label htmlFor="temperature-slider">Temperature: {temperature.toFixed(1)}</label>
+            <label htmlFor="temperature-slider">Температура: {temperature.toFixed(1)}</label>
             <input
               id="temperature-slider"
               type="range"
@@ -624,12 +633,12 @@ export function LiveConsole() {
               onChange={(e) => setTemperature(parseFloat(e.target.value))}
             />
             <div className="temperature-labels">
-              <span>0.0 (Deterministic)</span>
-              <span>2.0 (Creative)</span>
+              <span>0.0 (Предсказуемо)</span>
+              <span>2.0 (Творчески)</span>
             </div>
           </div>
           <div className="voice-section">
-            <label htmlFor="voice-select">Voice:</label>
+            <label htmlFor="voice-select">Голос:</label>
             <select
               id="voice-select"
               value={voice}
@@ -649,12 +658,12 @@ export function LiveConsole() {
       <div className="console-grid">
         <div className="console-panel side-panel">
           <div>
-            <p className="eyebrow">Camera</p>
-            <h3>Preview</h3>
+            <p className="eyebrow">Камера</p>
+            <h3>Предпросмотр</h3>
           </div>
 
           <div className="preview-frame">
-            {isCameraEnabled ? null : <span className="preview-placeholder">Camera is off</span>}
+            {isCameraEnabled ? null : <span className="preview-placeholder">Камера выключена</span>}
             <video ref={videoRef} autoPlay muted playsInline className={isCameraEnabled ? 'video-active' : 'video-idle'} />
           </div>
         </div>
@@ -662,22 +671,28 @@ export function LiveConsole() {
         <div className="console-panel transcript-panel">
           <div className="panel-header">
             <div>
-              <p className="eyebrow">Dialog</p>
-              <h3>Live transcript</h3>
+              <p className="eyebrow">Диалог</p>
+              <h3>Живая расшифровка</h3>
             </div>
           </div>
 
           <div className="message-list" aria-live="polite">
             {messages.length === 0 ? (
               <div className="empty-state">
-                Start a session and speak, type, or turn on the camera.
+                Запустите сессию и говорите, печатайте или включите камеру.
               </div>
             ) : (
               messages.map((message) => (
                 <article key={message.id} className={`message-bubble ${message.role}`}>
-                  <span className="message-role">{message.role === 'assistant' ? 'Gemini' : message.role}</span>
+                  <span className="message-role">
+                    {message.role === 'assistant'
+                      ? 'Gemini'
+                      : message.role === 'user'
+                        ? 'Вы'
+                        : 'Система'}
+                  </span>
                   <p>{message.text}</p>
-                  {message.pending ? <span className="message-pending">Listening...</span> : null}
+                  {message.pending ? <span className="message-pending">Слушаю...</span> : null}
                 </article>
               ))
             )}
@@ -692,11 +707,11 @@ export function LiveConsole() {
                   handleSendText();
                 }
               }}
-              placeholder="Type a message"
+              placeholder="Введите сообщение"
               disabled={!isSessionActive}
             />
             <button className="primary-button" onClick={handleSendText} disabled={!isSessionActive || !input.trim()}>
-              Send
+              Отправить
             </button>
           </div>
         </div>
@@ -705,8 +720,8 @@ export function LiveConsole() {
       <div className="console-panel events-panel">
         <div className="panel-header">
           <div>
-            <p className="eyebrow">System</p>
-            <h3>Recent events</h3>
+            <p className="eyebrow">Система</p>
+            <h3>Последние события</h3>
           </div>
         </div>
         <ul className="event-list">

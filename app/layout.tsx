@@ -13,13 +13,13 @@ const bodyFont = Source_Sans_3({
 });
 
 export const metadata: Metadata = {
-  title: 'Gemini Live Starter',
-  description: 'Minimal mobile-friendly starter for Gemini 3.1 Flash Live Preview.',
+  title: 'Gemini Live на русском',
+  description: 'Русскоязычный интерфейс для Gemini 3.1 Flash Live Preview.',
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="en">
+    <html lang="ru">
       <body className={`${headingFont.variable} ${bodyFont.variable}`}>{children}</body>
     </html>
   );
