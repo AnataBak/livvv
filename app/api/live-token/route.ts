@@ -5,10 +5,12 @@ import { buildLiveTokenConfig, getGeminiApiKey } from '@/lib/server/live-token';
 
 export const runtime = 'edge';
 
-export async function POST() {
+export async function POST(request: Request) {
   try {
     const now = Date.now();
-    const config = buildLiveTokenConfig(now);
+    const body = await request.json().catch(() => ({}));
+    const webSearchEnabled = Boolean(body?.webSearchEnabled);
+    const config = buildLiveTokenConfig(now, webSearchEnabled);
     const client = new GoogleGenAI({ apiKey: getGeminiApiKey() });
     const token = await client.authTokens.create({
       config,

@@ -21,6 +21,12 @@ describe('live session config', () => {
     expect(payload.setup.generationConfig.speechConfig.voiceConfig.prebuiltVoiceConfig.voiceName).toBe('KORE');
   });
 
+  it('adds Google Search tool when web search is enabled', () => {
+    const payload = buildSessionSetupMessage(0.6, 'Puck', true);
+
+    expect(payload.setup.tools).toEqual([{ googleSearch: {} }]);
+  });
+
   it('builds a constrained ephemeral token request', () => {
     const payload = buildLiveTokenConfig(0);
 
@@ -30,6 +36,12 @@ describe('live session config', () => {
     expect(payload.httpOptions.apiVersion).toBe('v1alpha');
     expect(payload.newSessionExpireTime).toBe('1970-01-01T00:01:00.000Z');
     expect(payload.expireTime).toBe('1970-01-01T00:30:00.000Z');
+  });
+
+  it('adds Google Search tool to constrained token config when enabled', () => {
+    const payload = buildLiveTokenConfig(0, true);
+
+    expect(payload.liveConnectConstraints.config.tools).toEqual([{ googleSearch: {} }]);
   });
 
   it('throws a clear error when GEMINI_API_KEY is missing', () => {

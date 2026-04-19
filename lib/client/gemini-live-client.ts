@@ -26,15 +26,23 @@ export class GeminiLiveClient {
   private callbacks: ClientCallbacks;
   private temperature: number;
   private voice: string;
+  private webSearchEnabled: boolean;
   private pollInterval: NodeJS.Timeout | null = null;
   private isConnected = false;
   private socket: WebSocket | null = null;
 
-  constructor(auth: GeminiLiveClientAuth, callbacks: ClientCallbacks = {}, temperature: number = 0.6, voice: string = 'Puck') {
+  constructor(
+    auth: GeminiLiveClientAuth,
+    callbacks: ClientCallbacks = {},
+    temperature: number = 0.6,
+    voice: string = 'Puck',
+    webSearchEnabled: boolean = false,
+  ) {
     this.auth = auth;
     this.callbacks = callbacks;
     this.temperature = temperature;
     this.voice = voice;
+    this.webSearchEnabled = webSearchEnabled;
   }
 
   async connect() {
@@ -61,7 +69,7 @@ export class GeminiLiveClient {
       this.socket = socket;
 
       socket.onopen = () => {
-        socket.send(JSON.stringify(buildSessionSetupMessage(this.temperature, this.voice)));
+        socket.send(JSON.stringify(buildSessionSetupMessage(this.temperature, this.voice, this.webSearchEnabled)));
         this.callbacks.onOpen?.();
         this.isConnected = true;
         resolve();
@@ -105,6 +113,7 @@ export class GeminiLiveClient {
         body: JSON.stringify({
           action: 'connect',
           token,
+          webSearchEnabled: this.webSearchEnabled,
         }),
       });
 

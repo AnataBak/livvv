@@ -1,5 +1,5 @@
 import { Modality } from '@google/genai';
-import { LIVE_MODEL } from '@/lib/live-session-config';
+import { LIVE_MODEL, LIVE_WEB_SEARCH_ENABLED } from '@/lib/live-session-config';
 
 type EnvSource = Record<string, string | undefined>;
 
@@ -15,7 +15,10 @@ export function getGeminiApiKey(env: EnvSource = process.env) {
   return apiKey;
 }
 
-export function buildLiveTokenConfig(now = Date.now()) {
+export function buildLiveTokenConfig(
+  now = Date.now(),
+  webSearchEnabled: boolean = LIVE_WEB_SEARCH_ENABLED,
+) {
   return {
     uses: 1,
     expireTime: new Date(now + 30 * 60 * 1000).toISOString(),
@@ -26,6 +29,7 @@ export function buildLiveTokenConfig(now = Date.now()) {
         responseModalities: [Modality.AUDIO],
         sessionResumption: {},
         temperature: 0.6,
+        tools: webSearchEnabled ? [{ googleSearch: {} }] : undefined,
       },
     },
     httpOptions: {

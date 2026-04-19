@@ -156,13 +156,15 @@ input {
 }
 
 .temperature-section,
-.voice-section {
+.voice-section,
+.search-section {
   display: flex;
   flex-direction: column;
 }
 
 .temperature-section label,
-.voice-section label {
+.voice-section label,
+.search-section label {
   font-weight: 700;
   margin-bottom: 0.5rem;
 }
@@ -186,6 +188,32 @@ input {
   background: var(--panel-strong);
   color: var(--text);
   font-size: 1rem;
+}
+
+.search-section {
+  justify-content: center;
+  padding: 0.9rem 1rem;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: var(--panel-strong);
+}
+
+.search-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+}
+
+.search-toggle input {
+  width: 1rem;
+  height: 1rem;
+}
+
+.search-note {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+  line-height: 1.45;
 }
 
 @media (max-width: 640px) {

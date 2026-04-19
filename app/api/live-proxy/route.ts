@@ -32,7 +32,7 @@ export async function GET(request: NextRequest) {
 
 // HTTP-based proxy using polling
 export async function POST(request: NextRequest) {
-  const { action, sessionId, message, token } = await request.json();
+  const { action, sessionId, message, token, webSearchEnabled } = await request.json();
 
   try {
     if (action === 'connect') {
@@ -60,7 +60,7 @@ export async function POST(request: NextRequest) {
           geminiWs.on('open', () => {
             clearTimeout(timeout);
             connection.isConnected = true;
-            geminiWs.send(JSON.stringify(buildSessionSetupMessage()));
+            geminiWs.send(JSON.stringify(buildSessionSetupMessage(0.6, 'Puck', Boolean(webSearchEnabled))));
             resolve();
           });
 
