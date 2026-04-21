@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import WebSocket from 'ws';
-import { buildSessionSetupMessage } from '@/lib/live-session-config';
+import { buildSessionSetupMessage, isLiveThinkingLevel } from '@/lib/live-session-config';
 import { parseLiveMessage } from '@/lib/client/live-message-parser';
 import type { LiveServerEvent } from '@/lib/client/live-message-parser';
 
@@ -32,7 +32,8 @@ export async function GET(request: NextRequest) {
 
 // HTTP-based proxy using polling
 export async function POST(request: NextRequest) {
-  const { action, sessionId, message, token, webSearchEnabled } = await request.json();
+  const { action, sessionId, message, token, webSearchEnabled, thinkingLevel } = await request.json();
+  const safeThinkingLevel = isLiveThinkingLevel(thinkingLevel) ? thinkingLevel : undefined;
 
   try {
     if (action === 'connect') {
@@ -60,7 +61,11 @@ export async function POST(request: NextRequest) {
           geminiWs.on('open', () => {
             clearTimeout(timeout);
             connection.isConnected = true;
-            geminiWs.send(JSON.stringify(buildSessionSetupMessage(0.6, 'Puck', Boolean(webSearchEnabled))));
+            geminiWs.send(
+              JSON.stringify(
+                buildSessionSetupMessage(0.6, 'Puck', Boolean(webSearchEnabled), safeThinkingLevel),
+              ),
+            );
             resolve();
           });
 
