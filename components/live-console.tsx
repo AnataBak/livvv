@@ -173,6 +173,53 @@ export function LiveConsole() {
     finalizePendingMessage('user');
   }, [finalizePendingMessage, stopCamera, stopMicrophone]);
 
+  const handleRemoteClose = useCallback(
+    (reason: string, options: { webSearchEnabled: boolean }) => {
+      stopMicrophone();
+      stopCamera();
+      audioPlayerRef.current?.interrupt();
+      finalizePendingMessage('assistant');
+      finalizePendingMessage('user');
+
+      if (reason === 'Connection closed.') {
+        // Normal user-initiated close via client.close(); nothing else to do.
+        setStatus('stopped');
+        appendEvent('Сессия закрыта.');
+        return;
+      }
+
+      const lower = reason.toLowerCase();
+      const isQuota =
+        lower.includes('quota') ||
+        lower.includes('resource_exhausted') ||
+        lower.includes('rate limit') ||
+        lower.includes('429');
+
+      if (isQuota && options.webSearchEnabled) {
+        const hint =
+          'Gemini отклонил сессию из-за квоты. Похоже, «Поиск в интернете» недоступен на вашем тарифе — выключите галочку в «Настройках» или подключите биллинг в Google AI Studio.';
+        setError(hint);
+        setStatus('error');
+        appendEvent(hint);
+        appendEvent(`Причина от сервера: ${reason}`);
+        return;
+      }
+
+      if (isQuota) {
+        const hint = 'Gemini отклонил сессию из-за квоты (лимит бесплатного тарифа). Подождите минуту и попробуйте ещё раз.';
+        setError(hint);
+        setStatus('error');
+        appendEvent(hint);
+        appendEvent(`Причина от сервера: ${reason}`);
+        return;
+      }
+
+      setStatus('stopped');
+      appendEvent(`Сессия закрыта: ${reason}`);
+    },
+    [appendEvent, finalizePendingMessage, stopCamera, stopMicrophone],
+  );
+
   const handleLiveEvent = useCallback(
     async (event: LiveServerEvent) => {
       switch (event.type) {
@@ -368,8 +415,7 @@ export function LiveConsole() {
                 appendEvent('Подключение к Gemini Live установлено.');
               },
               onClose: (reason) => {
-                setStatus('stopped');
-                appendEvent(`Сессия закрыта: ${reason}`);
+                handleRemoteClose(reason, { webSearchEnabled });
               },
               onEvent: (event) => {
                 void handleLiveEvent(event);
@@ -398,8 +444,7 @@ export function LiveConsole() {
                 appendEvent('Подключение к Gemini Live через прокси установлено.');
               },
               onClose: (reason) => {
-                setStatus('stopped');
-                appendEvent(`Сессия закрыта: ${reason}`);
+                handleRemoteClose(reason, { webSearchEnabled });
               },
               onEvent: (event) => {
                 void handleLiveEvent(event);
@@ -436,7 +481,7 @@ export function LiveConsole() {
         setIsBusy(false);
       }
     },
-    [apiKeyInput, appendEvent, fetchEphemeralToken, handleLiveEvent, startMicrophone, teardownSession, temperature, voice, webSearchEnabled],
+    [apiKeyInput, appendEvent, fetchEphemeralToken, handleLiveEvent, handleRemoteClose, startMicrophone, teardownSession, temperature, voice, webSearchEnabled],
   );
 
   const stopConversation = useCallback(() => {

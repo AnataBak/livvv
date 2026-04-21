@@ -218,12 +218,21 @@ export class GeminiLiveClient {
   }
 
   private send(payload: unknown) {
+    // Silently drop payloads when the session isn't connected. The microphone
+    // keeps emitting audio chunks for a short window after the server has
+    // closed the socket (e.g. quota rejection), and throwing here would
+    // surface as an uncaught runtime error inside the audio processor.
+    // Connection-loss surfacing is handled via the onClose callback.
     if (!this.isConnected) {
-      throw new Error('Gemini Live session is not connected.');
+      return;
     }
 
     if (this.socket) {
-      // Direct WebSocket mode
+      // Direct WebSocket mode. readyState guard prevents the race where the
+      // socket is mid-close when a pending chunk arrives.
+      if (this.socket.readyState !== WebSocket.OPEN) {
+        return;
+      }
       this.socket.send(JSON.stringify(payload));
     } else if (this.sessionId) {
       // Proxy mode
@@ -239,8 +248,6 @@ export class GeminiLiveClient {
         console.error('Error sending message:', error);
         this.callbacks.onError?.('Failed to send message');
       });
-    } else {
-      throw new Error('Gemini Live session is not connected.');
     }
   }
 
