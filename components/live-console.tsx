@@ -113,20 +113,27 @@ export function LiveConsole() {
   }, []);
 
   const upsertTranscript = useCallback(
-    (role: 'user' | 'assistant', text: string, finished: boolean) => {
+    (role: 'user' | 'assistant', chunk: string, finished: boolean) => {
       const existingId = pendingMessageIdsRef.current[role];
 
       if (existingId) {
         setMessages((current) =>
-          current.map((message) =>
-            message.id === existingId
-              ? {
-                  ...message,
-                  text,
-                  pending: !finished,
-                }
-              : message,
-          ),
+          current.map((message) => {
+            if (message.id !== existingId) {
+              return message;
+            }
+            // Gemini Live streams transcripts as incremental deltas. If the new
+            // chunk already starts with the previously-accumulated text, assume
+            // the server is sending cumulative text and replace. Otherwise
+            // append so the chat keeps the full sentence instead of rendering
+            // only the last word.
+            const nextText = chunk.startsWith(message.text) ? chunk : message.text + chunk;
+            return {
+              ...message,
+              text: nextText,
+              pending: !finished,
+            };
+          }),
         );
       } else {
         const id = nextMessageId();
@@ -136,7 +143,7 @@ export function LiveConsole() {
           {
             id,
             role,
-            text,
+            text: chunk,
             pending: !finished,
           },
         ]);
@@ -211,6 +218,7 @@ export function LiveConsole() {
           return;
         case 'interrupted':
           audioPlayerRef.current?.interrupt();
+          finalizePendingMessage('assistant');
           appendEvent('Ответ модели был прерван.');
           return;
         case 'turn-complete':
