@@ -325,6 +325,14 @@ export function LiveConsole() {
   }, []);
 
   const clearSessionMemory = useCallback(() => {
+    // Stop the active session first. Otherwise (a) Gemini keeps streaming new
+    // resumption handles and immediately repopulates localStorage, and (b) the
+    // open connection still holds the prior dialogue context server-side, so
+    // clearing only localStorage wouldn't actually start a fresh dialogue.
+    if (clientRef.current) {
+      teardownSession();
+      setStatus('stopped');
+    }
     resumptionHandleRef.current = null;
     try {
       window.localStorage.removeItem(RESUMPTION_HANDLE_STORAGE_KEY);
@@ -332,8 +340,9 @@ export function LiveConsole() {
       // ignore
     }
     setHasResumptionHandle(false);
-    appendEvent('Память диалога очищена. Следующая сессия начнётся с нуля.');
-  }, [appendEvent]);
+    setMessages([]);
+    appendEvent('Память диалога очищена. Запустите сессию заново — диалог начнётся с нуля.');
+  }, [appendEvent, teardownSession]);
 
   useEffect(() => {
     const trimmedKey = apiKeyInput.trim();
