@@ -1,4 +1,8 @@
-import { AUDIO_INPUT_SAMPLE_RATE, buildSessionSetupMessage } from '@/lib/live-session-config';
+import {
+  AUDIO_INPUT_SAMPLE_RATE,
+  buildSessionSetupMessage,
+  type LiveThinkingLevel,
+} from '@/lib/live-session-config';
 import { parseLiveMessage, type LiveServerEvent } from '@/lib/client/live-message-parser';
 
 type ClientCallbacks = {
@@ -27,6 +31,7 @@ export class GeminiLiveClient {
   private temperature: number;
   private voice: string;
   private webSearchEnabled: boolean;
+  private thinkingLevel: LiveThinkingLevel | undefined;
   private pollInterval: NodeJS.Timeout | null = null;
   private isConnected = false;
   private socket: WebSocket | null = null;
@@ -37,12 +42,14 @@ export class GeminiLiveClient {
     temperature: number = 0.6,
     voice: string = 'Puck',
     webSearchEnabled: boolean = false,
+    thinkingLevel?: LiveThinkingLevel,
   ) {
     this.auth = auth;
     this.callbacks = callbacks;
     this.temperature = temperature;
     this.voice = voice;
     this.webSearchEnabled = webSearchEnabled;
+    this.thinkingLevel = thinkingLevel;
   }
 
   async connect() {
@@ -69,7 +76,16 @@ export class GeminiLiveClient {
       this.socket = socket;
 
       socket.onopen = () => {
-        socket.send(JSON.stringify(buildSessionSetupMessage(this.temperature, this.voice, this.webSearchEnabled)));
+        socket.send(
+          JSON.stringify(
+            buildSessionSetupMessage(
+              this.temperature,
+              this.voice,
+              this.webSearchEnabled,
+              this.thinkingLevel,
+            ),
+          ),
+        );
         this.callbacks.onOpen?.();
         this.isConnected = true;
         resolve();
@@ -114,6 +130,7 @@ export class GeminiLiveClient {
           action: 'connect',
           token,
           webSearchEnabled: this.webSearchEnabled,
+          thinkingLevel: this.thinkingLevel,
         }),
       });
 
