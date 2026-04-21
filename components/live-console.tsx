@@ -42,6 +42,7 @@ const TEMPERATURE_STORAGE_KEY = 'gemini-live-temperature';
 const VOICE_STORAGE_KEY = 'gemini-live-voice';
 const WEB_SEARCH_STORAGE_KEY = 'gemini-live-web-search';
 const THINKING_LEVEL_STORAGE_KEY = 'gemini-live-thinking-level';
+const RESUMPTION_HANDLE_STORAGE_KEY = 'gemini-live-session-handle';
 const THINKING_LEVEL_LABELS: Record<LiveThinkingLevel, string> = {
   minimal: 'Минимальные (по умолчанию)',
   low: 'Низкие',
@@ -73,6 +74,8 @@ export function LiveConsole() {
   const [voice, setVoice] = useState<string>('Puck');
   const [webSearchEnabled, setWebSearchEnabled] = useState<boolean>(LIVE_WEB_SEARCH_ENABLED);
   const [thinkingLevel, setThinkingLevel] = useState<LiveThinkingLevel>(LIVE_THINKING_LEVEL_DEFAULT);
+  const [hasResumptionHandle, setHasResumptionHandle] = useState<boolean>(false);
+  const resumptionHandleRef = useRef<string | null>(null);
 
   const clientRef = useRef<GeminiLiveClient | null>(null);
   const audioPlayerRef = useRef<BrowserAudioPlayer | null>(null);
@@ -225,6 +228,19 @@ export function LiveConsole() {
           finalizePendingMessage('assistant');
           appendEvent('Ход завершён.');
           return;
+        case 'session-resumption-update':
+          // Gemini periodically issues a new handle we can use to resume this
+          // dialogue later (even after stopping the session or reloading).
+          if (event.resumable && event.handle) {
+            resumptionHandleRef.current = event.handle;
+            try {
+              window.localStorage.setItem(RESUMPTION_HANDLE_STORAGE_KEY, event.handle);
+              setHasResumptionHandle(true);
+            } catch {
+              // localStorage may be disabled (private mode); ignore.
+            }
+          }
+          return;
         case 'error':
           setError(event.message);
           setStatus('error');
@@ -299,6 +315,34 @@ export function LiveConsole() {
       setThinkingLevel(savedThinking);
     }
   }, []);
+
+  useEffect(() => {
+    const savedHandle = window.localStorage.getItem(RESUMPTION_HANDLE_STORAGE_KEY);
+    if (savedHandle) {
+      resumptionHandleRef.current = savedHandle;
+      setHasResumptionHandle(true);
+    }
+  }, []);
+
+  const clearSessionMemory = useCallback(() => {
+    // Stop the active session first. Otherwise (a) Gemini keeps streaming new
+    // resumption handles and immediately repopulates localStorage, and (b) the
+    // open connection still holds the prior dialogue context server-side, so
+    // clearing only localStorage wouldn't actually start a fresh dialogue.
+    if (clientRef.current) {
+      teardownSession();
+      setStatus('stopped');
+    }
+    resumptionHandleRef.current = null;
+    try {
+      window.localStorage.removeItem(RESUMPTION_HANDLE_STORAGE_KEY);
+    } catch {
+      // ignore
+    }
+    setHasResumptionHandle(false);
+    setMessages([]);
+    appendEvent('Память диалога очищена. Запустите сессию заново — диалог начнётся с нуля.');
+  }, [appendEvent, teardownSession]);
 
   useEffect(() => {
     const trimmedKey = apiKeyInput.trim();
@@ -407,7 +451,11 @@ export function LiveConsole() {
             {
               onOpen: () => {
                 setStatus('active');
-                appendEvent('Подключение к Gemini Live установлено.');
+                appendEvent(
+                  resumptionHandleRef.current
+                    ? 'Подключение к Gemini Live установлено. Продолжаем прошлый диалог.'
+                    : 'Подключение к Gemini Live установлено.',
+                );
               },
               onClose: (reason) => {
                 setStatus('stopped');
@@ -426,6 +474,7 @@ export function LiveConsole() {
             voice,
             webSearchEnabled,
             thinkingLevel,
+            resumptionHandleRef.current ?? undefined,
           );
         } else {
           setAuthMode('server-token');
@@ -440,7 +489,11 @@ export function LiveConsole() {
             {
               onOpen: () => {
                 setStatus('active');
-                appendEvent('Подключение к Gemini Live через прокси установлено.');
+                appendEvent(
+                  resumptionHandleRef.current
+                    ? 'Подключение к Gemini Live через прокси установлено. Продолжаем прошлый диалог.'
+                    : 'Подключение к Gemini Live через прокси установлено.',
+                );
               },
               onClose: (reason) => {
                 setStatus('stopped');
@@ -459,6 +512,7 @@ export function LiveConsole() {
             voice,
             webSearchEnabled,
             thinkingLevel,
+            resumptionHandleRef.current ?? undefined,
           );
         }
 
@@ -736,6 +790,22 @@ export function LiveConsole() {
             <p className="thinking-note">
               По умолчанию «минимальные» — самая низкая задержка. Применяется при следующем запуске сессии.
             </p>
+          </div>
+          <div className="memory-section">
+            <label>Память диалога:</label>
+            <p className="memory-status">
+              {hasResumptionHandle
+                ? 'Есть сохранённый диалог — при запуске модель продолжит с того места, где остановились.'
+                : 'Памяти пока нет. После первой сессии модель сможет продолжать диалог между запусками.'}
+            </p>
+            <button
+              type="button"
+              className="secondary-button"
+              onClick={clearSessionMemory}
+              disabled={!hasResumptionHandle}
+            >
+              Очистить память диалога
+            </button>
           </div>
           <div className="search-section">
             <label className="search-toggle" htmlFor="web-search-toggle">

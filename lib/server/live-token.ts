@@ -27,6 +27,9 @@ export function buildLiveTokenConfig(
   const config: Record<string, unknown> = {
     responseModalities: [Modality.AUDIO],
     sessionResumption: {},
+    contextWindowCompression: {
+      slidingWindow: {},
+    },
     temperature: 0.6,
     tools: webSearchEnabled ? [{ googleSearch: {} }] : undefined,
   };

@@ -6,11 +6,16 @@ export type LiveServerEvent =
   | { type: 'output-transcription'; text: string; finished: boolean }
   | { type: 'interrupted' }
   | { type: 'turn-complete' }
+  | { type: 'session-resumption-update'; handle: string; resumable: boolean }
   | { type: 'error'; message: string };
 
 type MaybeMessage = {
   error?: { message?: string };
   setupComplete?: unknown;
+  sessionResumptionUpdate?: {
+    newHandle?: string;
+    resumable?: boolean;
+  };
   serverContent?: {
     interrupted?: boolean;
     turnComplete?: boolean;
@@ -72,6 +77,15 @@ export function parseLiveMessage(message: MaybeMessage): LiveServerEvent[] {
 
   if (message.serverContent?.turnComplete) {
     events.push({ type: 'turn-complete' });
+  }
+
+  const resumption = message.sessionResumptionUpdate;
+  if (resumption?.newHandle) {
+    events.push({
+      type: 'session-resumption-update',
+      handle: resumption.newHandle,
+      resumable: Boolean(resumption.resumable),
+    });
   }
 
   return events;

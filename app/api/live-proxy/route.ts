@@ -32,8 +32,11 @@ export async function GET(request: NextRequest) {
 
 // HTTP-based proxy using polling
 export async function POST(request: NextRequest) {
-  const { action, sessionId, message, token, webSearchEnabled, thinkingLevel } = await request.json();
+  const { action, sessionId, message, token, webSearchEnabled, thinkingLevel, resumptionHandle } = await request.json();
   const safeThinkingLevel = isLiveThinkingLevel(thinkingLevel) ? thinkingLevel : undefined;
+  const safeResumptionHandle = typeof resumptionHandle === 'string' && resumptionHandle.length > 0
+    ? resumptionHandle
+    : undefined;
 
   try {
     if (action === 'connect') {
@@ -63,7 +66,13 @@ export async function POST(request: NextRequest) {
             connection.isConnected = true;
             geminiWs.send(
               JSON.stringify(
-                buildSessionSetupMessage(0.6, 'Puck', Boolean(webSearchEnabled), safeThinkingLevel),
+                buildSessionSetupMessage(
+                  0.6,
+                  'Puck',
+                  Boolean(webSearchEnabled),
+                  safeThinkingLevel,
+                  safeResumptionHandle,
+                ),
               ),
             );
             resolve();

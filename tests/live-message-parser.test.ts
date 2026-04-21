@@ -45,4 +45,25 @@ describe('parseLiveMessage', () => {
 
     expect(events).toEqual([{ type: 'error', message: 'socket failed' }]);
   });
+
+  it('extracts resumable session handle updates', () => {
+    const events = parseLiveMessage({
+      sessionResumptionUpdate: {
+        newHandle: 'abc-123',
+        resumable: true,
+      },
+    });
+
+    expect(events).toEqual([
+      { type: 'session-resumption-update', handle: 'abc-123', resumable: true },
+    ]);
+  });
+
+  it('ignores session resumption updates without a new handle', () => {
+    const events = parseLiveMessage({
+      sessionResumptionUpdate: { resumable: true },
+    });
+
+    expect(events).toEqual([]);
+  });
 });

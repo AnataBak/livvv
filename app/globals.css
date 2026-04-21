@@ -157,16 +157,32 @@ input {
 
 .temperature-section,
 .voice-section,
-.search-section {
+.search-section,
+.memory-section {
   display: flex;
   flex-direction: column;
 }
 
 .temperature-section label,
 .voice-section label,
-.search-section label {
+.search-section label,
+.memory-section > label {
   font-weight: 700;
   margin-bottom: 0.5rem;
+}
+
+.memory-section {
+  padding: 0.9rem 1rem;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: var(--panel-strong);
+  gap: 0.6rem;
+}
+
+.memory-status {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.9rem;
 }
 
 .temperature-section input[type="range"] {
