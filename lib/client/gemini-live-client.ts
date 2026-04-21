@@ -32,6 +32,7 @@ export class GeminiLiveClient {
   private voice: string;
   private webSearchEnabled: boolean;
   private thinkingLevel: LiveThinkingLevel | undefined;
+  private resumptionHandle: string | undefined;
   private pollInterval: NodeJS.Timeout | null = null;
   private isConnected = false;
   private socket: WebSocket | null = null;
@@ -43,6 +44,7 @@ export class GeminiLiveClient {
     voice: string = 'Puck',
     webSearchEnabled: boolean = false,
     thinkingLevel?: LiveThinkingLevel,
+    resumptionHandle?: string,
   ) {
     this.auth = auth;
     this.callbacks = callbacks;
@@ -50,6 +52,7 @@ export class GeminiLiveClient {
     this.voice = voice;
     this.webSearchEnabled = webSearchEnabled;
     this.thinkingLevel = thinkingLevel;
+    this.resumptionHandle = resumptionHandle;
   }
 
   async connect() {
@@ -83,6 +86,7 @@ export class GeminiLiveClient {
               this.voice,
               this.webSearchEnabled,
               this.thinkingLevel,
+              this.resumptionHandle,
             ),
           ),
         );
@@ -131,6 +135,7 @@ export class GeminiLiveClient {
           token,
           webSearchEnabled: this.webSearchEnabled,
           thinkingLevel: this.thinkingLevel,
+          resumptionHandle: this.resumptionHandle,
         }),
       });
 

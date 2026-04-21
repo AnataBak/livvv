@@ -49,6 +49,19 @@ describe('live session config', () => {
     expect(generationConfig.thinkingConfig).toEqual({ thinkingLevel: 'medium' });
   });
 
+  it('enables session resumption (empty handle) and sliding-window compression by default', () => {
+    const payload = buildSessionSetupMessage();
+
+    expect(payload.setup.sessionResumption).toEqual({});
+    expect(payload.setup.contextWindowCompression).toEqual({ slidingWindow: {} });
+  });
+
+  it('passes a session resumption handle through to the setup payload', () => {
+    const payload = buildSessionSetupMessage(0.6, 'Puck', false, undefined, 'handle-abc');
+
+    expect(payload.setup.sessionResumption).toEqual({ handle: 'handle-abc' });
+  });
+
   it('defaults the thinking level to "minimal"', () => {
     expect(LIVE_THINKING_LEVEL_DEFAULT).toBe('minimal');
     expect(LIVE_THINKING_LEVELS).toEqual(['minimal', 'low', 'medium', 'high']);
@@ -87,6 +100,14 @@ describe('live session config', () => {
     const config = payload.liveConnectConstraints.config as Record<string, unknown>;
 
     expect(config.thinkingConfig).toEqual({ thinkingLevel: 'high' });
+  });
+
+  it('enables session resumption and context window compression in the token config', () => {
+    const payload = buildLiveTokenConfig(0);
+    const config = payload.liveConnectConstraints.config as Record<string, unknown>;
+
+    expect(config.sessionResumption).toEqual({});
+    expect(config.contextWindowCompression).toEqual({ slidingWindow: {} });
   });
 
   it('throws a clear error when GEMINI_API_KEY is missing', () => {
