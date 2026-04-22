@@ -1045,34 +1045,51 @@ export function LiveConsole() {
             </div>
             <div className="prompt-presets">
               <div className="prompt-presets-header">Пресеты промта:</div>
-              {promptPresets.length === 0 ? (
-                <p className="prompt-presets-empty">
-                  Сохранённых пресетов пока нет. Отредактируй промт выше, введи имя и нажми «Сохранить».
-                </p>
-              ) : (
-                <ul className="prompt-presets-list">
+              <div className="prompt-presets-select-row">
+                <select
+                  className="prompt-presets-select"
+                  value=""
+                  onChange={(event) => {
+                    const name = event.target.value;
+                    if (!name) return;
+                    const preset = promptPresets.find((p) => p.name === name);
+                    if (preset) loadPromptPreset(preset);
+                    event.target.value = '';
+                  }}
+                  disabled={promptPresets.length === 0}
+                >
+                  <option value="">
+                    {promptPresets.length === 0
+                      ? 'Нет сохранённых пресетов'
+                      : `Загрузить пресет (${promptPresets.length})…`}
+                  </option>
                   {promptPresets.map((preset) => (
-                    <li key={preset.name} className="prompt-preset-item">
-                      <button
-                        type="button"
-                        className="prompt-preset-load"
-                        onClick={() => loadPromptPreset(preset)}
-                        title={preset.text}
-                      >
-                        {preset.name}
-                      </button>
-                      <button
-                        type="button"
-                        className="prompt-preset-delete"
-                        onClick={() => deletePromptPreset(preset.name)}
-                        aria-label={`Удалить пресет ${preset.name}`}
-                      >
-                        ×
-                      </button>
-                    </li>
+                    <option key={preset.name} value={preset.name}>
+                      {preset.name}
+                    </option>
                   ))}
-                </ul>
-              )}
+                </select>
+                <select
+                  className="prompt-presets-select prompt-presets-delete-select"
+                  value=""
+                  onChange={(event) => {
+                    const name = event.target.value;
+                    if (!name) return;
+                    deletePromptPreset(name);
+                    event.target.value = '';
+                  }}
+                  disabled={promptPresets.length === 0}
+                  aria-label="Удалить пресет"
+                  title="Удалить пресет"
+                >
+                  <option value="">Удалить…</option>
+                  {promptPresets.map((preset) => (
+                    <option key={preset.name} value={preset.name}>
+                      {preset.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
               <div className="prompt-presets-save">
                 <input
                   type="text"

@@ -225,64 +225,38 @@ input {
   font-weight: 500;
 }
 
-.prompt-presets-empty {
-  margin: 0;
-  color: var(--muted);
-  font-size: 0.82rem;
-  line-height: 1.4;
-}
-
-.prompt-presets-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
+.prompt-presets-select-row {
   display: flex;
+  gap: 0.5rem;
   flex-wrap: wrap;
-  gap: 0.4rem;
 }
 
-.prompt-preset-item {
-  display: inline-flex;
-  align-items: stretch;
-  background: var(--panel-strong);
+.prompt-presets-select {
+  flex: 1 1 12rem;
+  min-width: 0;
+  padding: 0.45rem 0.65rem;
   border: 1px solid var(--line);
-  border-radius: 999px;
-  overflow: hidden;
-}
-
-.prompt-preset-load {
-  appearance: none;
-  background: transparent;
+  border-radius: 10px;
+  background: var(--panel);
   color: var(--text);
-  border: none;
-  padding: 0.35rem 0.75rem;
-  font-size: 0.85rem;
+  font-size: 0.9rem;
   cursor: pointer;
-  max-width: 18rem;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
-.prompt-preset-load:hover {
-  background: color-mix(in srgb, var(--accent) 15%, transparent);
+.prompt-presets-select:focus {
+  outline: none;
+  border-color: var(--accent);
 }
 
-.prompt-preset-delete {
-  appearance: none;
-  background: transparent;
+.prompt-presets-select:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.prompt-presets-delete-select {
+  flex: 0 0 auto;
+  max-width: 12rem;
   color: var(--muted);
-  border: none;
-  border-left: 1px solid var(--line);
-  padding: 0 0.55rem;
-  font-size: 1rem;
-  line-height: 1;
-  cursor: pointer;
-}
-
-.prompt-preset-delete:hover {
-  color: #ff7272;
-  background: color-mix(in srgb, #ff7272 12%, transparent);
 }
 
 .prompt-presets-save {
