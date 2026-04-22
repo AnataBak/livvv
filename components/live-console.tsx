@@ -826,11 +826,6 @@ export function LiveConsole() {
   return (
     <section className="console-shell">
       <div className="console-panel status-panel">
-        <div>
-          <p className="eyebrow">Сессия</p>
-          <h2>Gemini 3.1 Flash Live Preview</h2>
-        </div>
-
         <div className="status-grid">
           <div className="status-card">
             <span className="status-label">Состояние</span>
@@ -884,10 +879,10 @@ export function LiveConsole() {
           </button>
           <button
             className="secondary-button"
-            onClick={() => void startSession({ resetConversation: true })}
-            disabled={isBusy}
+            onClick={clearSessionMemory}
+            disabled={!hasResumptionHandle || isBusy}
           >
-            Новый диалог
+            Очистить память диалога
           </button>
         </div>
 
