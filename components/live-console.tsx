@@ -48,6 +48,7 @@ const VOICE_STORAGE_KEY = 'gemini-live-voice';
 const WEB_SEARCH_STORAGE_KEY = 'gemini-live-web-search';
 const THINKING_LEVEL_STORAGE_KEY = 'gemini-live-thinking-level';
 const RESUMPTION_HANDLE_STORAGE_KEY = 'gemini-live-session-handle';
+const RESUMPTION_HANDLE_MODEL_STORAGE_KEY = 'gemini-live-session-handle-model';
 const SYSTEM_INSTRUCTION_STORAGE_KEY = 'gemini-live-system-instruction';
 const MODEL_STORAGE_KEY = 'gemini-live-model';
 const THINKING_LEVEL_LABELS: Record<LiveThinkingLevel, string> = {
@@ -86,6 +87,10 @@ export function LiveConsole() {
   const [hasResumptionHandle, setHasResumptionHandle] = useState<boolean>(false);
   const thinkingLevelSupported = modelSupportsThinkingLevel(model);
   const resumptionHandleRef = useRef<string | null>(null);
+  const modelRef = useRef<LiveModelId>(model);
+  useEffect(() => {
+    modelRef.current = model;
+  }, [model]);
 
   const clientRef = useRef<GeminiLiveClient | null>(null);
   const audioPlayerRef = useRef<BrowserAudioPlayer | null>(null);
@@ -256,6 +261,7 @@ export function LiveConsole() {
             resumptionHandleRef.current = event.handle;
             try {
               window.localStorage.setItem(RESUMPTION_HANDLE_STORAGE_KEY, event.handle);
+              window.localStorage.setItem(RESUMPTION_HANDLE_MODEL_STORAGE_KEY, modelRef.current);
               setHasResumptionHandle(true);
             } catch {
               // localStorage may be disabled (private mode); ignore.
@@ -340,11 +346,35 @@ export function LiveConsole() {
 
   useEffect(() => {
     const savedHandle = window.localStorage.getItem(RESUMPTION_HANDLE_STORAGE_KEY);
-    if (savedHandle) {
+    const savedHandleModel = window.localStorage.getItem(RESUMPTION_HANDLE_MODEL_STORAGE_KEY);
+    if (savedHandle && (!savedHandleModel || savedHandleModel === model)) {
       resumptionHandleRef.current = savedHandle;
       setHasResumptionHandle(true);
     }
+    // If a handle exists but was issued by a different model, we silently
+    // discard it — resumption handles are model-specific and Gemini rejects
+    // them with "Invalid session handle" if reused across models.
+    // We intentionally do NOT run this effect when `model` changes; the
+    // model-change effect below is responsible for clearing the handle.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // When the user switches to a different Live model, previously saved
+  // resumption handles are invalid. Drop them so the next session starts
+  // fresh instead of hitting "Invalid session handle" from Gemini.
+  useEffect(() => {
+    const savedHandleModel = window.localStorage.getItem(RESUMPTION_HANDLE_MODEL_STORAGE_KEY);
+    if (savedHandleModel && savedHandleModel !== model) {
+      resumptionHandleRef.current = null;
+      try {
+        window.localStorage.removeItem(RESUMPTION_HANDLE_STORAGE_KEY);
+        window.localStorage.removeItem(RESUMPTION_HANDLE_MODEL_STORAGE_KEY);
+      } catch {
+        // ignore
+      }
+      setHasResumptionHandle(false);
+    }
+  }, [model]);
 
   useEffect(() => {
     const savedInstruction = window.localStorage.getItem(SYSTEM_INSTRUCTION_STORAGE_KEY);
@@ -393,6 +423,7 @@ export function LiveConsole() {
     resumptionHandleRef.current = null;
     try {
       window.localStorage.removeItem(RESUMPTION_HANDLE_STORAGE_KEY);
+      window.localStorage.removeItem(RESUMPTION_HANDLE_MODEL_STORAGE_KEY);
     } catch {
       // ignore
     }
