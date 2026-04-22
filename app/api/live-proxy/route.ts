@@ -37,7 +37,10 @@ export async function GET(request: NextRequest) {
 
 // HTTP-based proxy using polling
 export async function POST(request: NextRequest) {
-  const { action, sessionId, message, token, webSearchEnabled, thinkingLevel, resumptionHandle, systemInstruction, model } = await request.json();
+  const { action, sessionId, message, token, temperature, voice, webSearchEnabled, thinkingLevel, resumptionHandle, systemInstruction, model, language } = await request.json();
+  const safeTemperature = typeof temperature === 'number' && Number.isFinite(temperature) ? temperature : 0.6;
+  const safeVoice = typeof voice === 'string' && voice.trim().length > 0 ? voice : 'Puck';
+  const safeLanguage = typeof language === 'string' && language.trim().length > 0 ? language : undefined;
   const safeThinkingLevel = isLiveThinkingLevel(thinkingLevel) ? thinkingLevel : undefined;
   const safeResumptionHandle = typeof resumptionHandle === 'string' && resumptionHandle.length > 0
     ? resumptionHandle
@@ -76,13 +79,14 @@ export async function POST(request: NextRequest) {
             geminiWs.send(
               JSON.stringify(
                 buildSessionSetupMessage(
-                  0.6,
-                  'Puck',
+                  safeTemperature,
+                  safeVoice,
                   Boolean(webSearchEnabled),
                   safeThinkingLevel,
                   safeResumptionHandle,
                   safeSystemInstruction,
                   safeModel,
+                  safeLanguage,
                 ),
               ),
             );
