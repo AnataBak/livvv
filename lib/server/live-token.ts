@@ -1,7 +1,11 @@
 import { Modality } from '@google/genai';
 import {
-  LIVE_MODEL,
+  LIVE_MODEL_DEFAULT,
   LIVE_WEB_SEARCH_ENABLED,
+  modelSupportsContextWindowCompression,
+  modelSupportsSessionResumption,
+  modelSupportsThinkingLevel,
+  type LiveModelId,
   type LiveThinkingLevel,
 } from '@/lib/live-session-config';
 
@@ -23,18 +27,21 @@ export function buildLiveTokenConfig(
   now = Date.now(),
   webSearchEnabled: boolean = LIVE_WEB_SEARCH_ENABLED,
   thinkingLevel?: LiveThinkingLevel,
+  model: LiveModelId = LIVE_MODEL_DEFAULT,
 ) {
   const config: Record<string, unknown> = {
     responseModalities: [Modality.AUDIO],
-    sessionResumption: {},
-    contextWindowCompression: {
-      slidingWindow: {},
-    },
     temperature: 0.6,
     tools: webSearchEnabled ? [{ googleSearch: {} }] : undefined,
   };
 
-  if (thinkingLevel) {
+  if (modelSupportsSessionResumption(model)) {
+    config.sessionResumption = {};
+  }
+  if (modelSupportsContextWindowCompression(model)) {
+    config.contextWindowCompression = { slidingWindow: {} };
+  }
+  if (thinkingLevel && modelSupportsThinkingLevel(model)) {
     config.thinkingConfig = { thinkingLevel };
   }
 
@@ -43,7 +50,7 @@ export function buildLiveTokenConfig(
     expireTime: new Date(now + 30 * 60 * 1000).toISOString(),
     newSessionExpireTime: new Date(now + 60 * 1000).toISOString(),
     liveConnectConstraints: {
-      model: LIVE_MODEL,
+      model,
       config,
     },
     httpOptions: {

@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import WebSocket from 'ws';
-import { buildSessionSetupMessage, isLiveThinkingLevel } from '@/lib/live-session-config';
+import {
+  LIVE_MODEL_DEFAULT,
+  buildSessionSetupMessage,
+  isLiveModelId,
+  isLiveThinkingLevel,
+} from '@/lib/live-session-config';
 import { parseLiveMessage } from '@/lib/client/live-message-parser';
 import type { LiveServerEvent } from '@/lib/client/live-message-parser';
 
@@ -32,7 +37,7 @@ export async function GET(request: NextRequest) {
 
 // HTTP-based proxy using polling
 export async function POST(request: NextRequest) {
-  const { action, sessionId, message, token, webSearchEnabled, thinkingLevel, resumptionHandle, systemInstruction } = await request.json();
+  const { action, sessionId, message, token, webSearchEnabled, thinkingLevel, resumptionHandle, systemInstruction, model } = await request.json();
   const safeThinkingLevel = isLiveThinkingLevel(thinkingLevel) ? thinkingLevel : undefined;
   const safeResumptionHandle = typeof resumptionHandle === 'string' && resumptionHandle.length > 0
     ? resumptionHandle
@@ -40,6 +45,7 @@ export async function POST(request: NextRequest) {
   const safeSystemInstruction = typeof systemInstruction === 'string' && systemInstruction.trim().length > 0
     ? systemInstruction
     : undefined;
+  const safeModel = isLiveModelId(model) ? model : LIVE_MODEL_DEFAULT;
 
   try {
     if (action === 'connect') {
@@ -76,6 +82,7 @@ export async function POST(request: NextRequest) {
                   safeThinkingLevel,
                   safeResumptionHandle,
                   safeSystemInstruction,
+                  safeModel,
                 ),
               ),
             );

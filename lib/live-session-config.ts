@@ -1,4 +1,47 @@
-export const LIVE_MODEL = 'gemini-3.1-flash-live-preview';
+export const LIVE_MODELS = [
+  {
+    id: 'gemini-3.1-flash-live-preview',
+    label: 'Gemini 3.1 Flash Live (по умолчанию)',
+    supportsThinkingLevel: true,
+    supportsSessionResumption: true,
+    supportsContextWindowCompression: true,
+  },
+  {
+    id: 'gemini-2.5-flash-native-audio-preview-12-2025',
+    label: 'Gemini 2.5 Flash Live (native audio)',
+    supportsThinkingLevel: false,
+    // Native audio rejects sessionResumption / contextWindowCompression with
+    // an immediate close, so we don't send them for this model.
+    supportsSessionResumption: false,
+    supportsContextWindowCompression: false,
+  },
+] as const;
+
+export type LiveModelId = (typeof LIVE_MODELS)[number]['id'];
+export const LIVE_MODEL_DEFAULT: LiveModelId = 'gemini-3.1-flash-live-preview';
+
+// Kept for backward compatibility (imports in the UI/status cards).
+export const LIVE_MODEL: LiveModelId = LIVE_MODEL_DEFAULT;
+
+export function isLiveModelId(value: unknown): value is LiveModelId {
+  return (
+    typeof value === 'string' &&
+    (LIVE_MODELS as ReadonlyArray<{ id: string }>).some((m) => m.id === value)
+  );
+}
+
+export function modelSupportsThinkingLevel(model: LiveModelId): boolean {
+  return Boolean(LIVE_MODELS.find((m) => m.id === model)?.supportsThinkingLevel);
+}
+
+export function modelSupportsSessionResumption(model: LiveModelId): boolean {
+  return Boolean(LIVE_MODELS.find((m) => m.id === model)?.supportsSessionResumption);
+}
+
+export function modelSupportsContextWindowCompression(model: LiveModelId): boolean {
+  return Boolean(LIVE_MODELS.find((m) => m.id === model)?.supportsContextWindowCompression);
+}
+
 export const LIVE_VOICE = 'Puck';
 export const LIVE_WEB_SEARCH_ENABLED = false;
 export const AUDIO_INPUT_SAMPLE_RATE = 16000;
@@ -33,6 +76,7 @@ export function buildSessionSetupMessage(
   thinkingLevel?: LiveThinkingLevel,
   resumptionHandle?: string,
   systemInstruction: string = SYSTEM_INSTRUCTION,
+  model: LiveModelId = LIVE_MODEL_DEFAULT,
 ) {
   const generationConfig: Record<string, unknown> = {
     responseModalities: ['AUDIO'],
@@ -46,31 +90,32 @@ export function buildSessionSetupMessage(
     },
   };
 
-  if (thinkingLevel) {
+  // Only 3.1 Live accepts thinkingLevel; 2.5 Live uses a different API
+  // (thinkingBudget tokens). For now we let 2.5 use its dynamic default.
+  if (thinkingLevel && modelSupportsThinkingLevel(model)) {
     generationConfig.thinkingConfig = { thinkingLevel };
   }
 
-  // Session resumption: if a handle from a previous session is provided, Gemini
-  // will restore that session's context. Otherwise {} enables resumption for
-  // this session so the server starts issuing resumption handles we can save.
-  const sessionResumption = resumptionHandle ? { handle: resumptionHandle } : {};
-
-  return {
-    setup: {
-      model: `models/${LIVE_MODEL}`,
-      generationConfig,
-      tools: webSearchEnabled ? [{ googleSearch: {} }] : undefined,
-      systemInstruction: {
-        parts: [{ text: systemInstruction }],
-      },
-      inputAudioTranscription: {},
-      outputAudioTranscription: {},
-      sessionResumption,
-      // Sliding-window compression lifts the 15-minute audio-session cap and
-      // keeps connections alive on long dialogues.
-      contextWindowCompression: {
-        slidingWindow: {},
-      },
+  const setup: Record<string, unknown> = {
+    model: `models/${model}`,
+    generationConfig,
+    tools: webSearchEnabled ? [{ googleSearch: {} }] : undefined,
+    systemInstruction: {
+      parts: [{ text: systemInstruction }],
     },
+    inputAudioTranscription: {},
+    outputAudioTranscription: {},
   };
+
+  // Session resumption / context-window compression are not supported by
+  // every Live model (e.g. 2.5 native audio closes the WS immediately when
+  // they're present). Only include them when the selected model supports them.
+  if (modelSupportsSessionResumption(model)) {
+    setup.sessionResumption = resumptionHandle ? { handle: resumptionHandle } : {};
+  }
+  if (modelSupportsContextWindowCompression(model)) {
+    setup.contextWindowCompression = { slidingWindow: {} };
+  }
+
+  return { setup };
 }

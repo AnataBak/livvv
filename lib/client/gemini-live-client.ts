@@ -1,6 +1,8 @@
 import {
   AUDIO_INPUT_SAMPLE_RATE,
+  LIVE_MODEL_DEFAULT,
   buildSessionSetupMessage,
+  type LiveModelId,
   type LiveThinkingLevel,
 } from '@/lib/live-session-config';
 import { parseLiveMessage, type LiveServerEvent } from '@/lib/client/live-message-parser';
@@ -142,6 +144,7 @@ export class GeminiLiveClient {
   private thinkingLevel: LiveThinkingLevel | undefined;
   private resumptionHandle: string | undefined;
   private systemInstruction: string | undefined;
+  private model: LiveModelId;
   private pollInterval: NodeJS.Timeout | null = null;
   private isConnected = false;
   private socket: WebSocket | null = null;
@@ -155,6 +158,7 @@ export class GeminiLiveClient {
     thinkingLevel?: LiveThinkingLevel,
     resumptionHandle?: string,
     systemInstruction?: string,
+    model: LiveModelId = LIVE_MODEL_DEFAULT,
   ) {
     this.auth = auth;
     this.callbacks = callbacks;
@@ -164,6 +168,7 @@ export class GeminiLiveClient {
     this.thinkingLevel = thinkingLevel;
     this.resumptionHandle = resumptionHandle;
     this.systemInstruction = systemInstruction;
+    this.model = model;
   }
 
   async connect() {
@@ -199,6 +204,7 @@ export class GeminiLiveClient {
               this.thinkingLevel,
               this.resumptionHandle,
               this.systemInstruction,
+              this.model,
             ),
           ),
         );
@@ -255,6 +261,7 @@ export class GeminiLiveClient {
           thinkingLevel: this.thinkingLevel,
           resumptionHandle: this.resumptionHandle,
           systemInstruction: this.systemInstruction,
+          model: this.model,
         }),
       });
 

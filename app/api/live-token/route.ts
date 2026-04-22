@@ -1,6 +1,10 @@
 import { NextResponse } from 'next/server';
 import { GoogleGenAI } from '@google/genai';
-import { LIVE_MODEL, isLiveThinkingLevel } from '@/lib/live-session-config';
+import {
+  LIVE_MODEL_DEFAULT,
+  isLiveModelId,
+  isLiveThinkingLevel,
+} from '@/lib/live-session-config';
 import { buildLiveTokenConfig, getGeminiApiKey } from '@/lib/server/live-token';
 
 export const runtime = 'edge';
@@ -11,7 +15,8 @@ export async function POST(request: Request) {
     const body = await request.json().catch(() => ({}));
     const webSearchEnabled = Boolean(body?.webSearchEnabled);
     const thinkingLevel = isLiveThinkingLevel(body?.thinkingLevel) ? body.thinkingLevel : undefined;
-    const config = buildLiveTokenConfig(now, webSearchEnabled, thinkingLevel);
+    const model = isLiveModelId(body?.model) ? body.model : LIVE_MODEL_DEFAULT;
+    const config = buildLiveTokenConfig(now, webSearchEnabled, thinkingLevel, model);
     const client = new GoogleGenAI({ apiKey: getGeminiApiKey() });
     const token = await client.authTokens.create({
       config,
@@ -23,7 +28,7 @@ export async function POST(request: Request) {
 
     return NextResponse.json({
       token: token.name,
-      model: LIVE_MODEL,
+      model,
       expireTime: config.expireTime,
       newSessionExpireTime: config.newSessionExpireTime,
     });
