@@ -50,7 +50,42 @@ const THINKING_LEVEL_STORAGE_KEY = 'gemini-live-thinking-level';
 const RESUMPTION_HANDLE_STORAGE_KEY = 'gemini-live-session-handle';
 const RESUMPTION_HANDLE_MODEL_STORAGE_KEY = 'gemini-live-session-handle-model';
 const SYSTEM_INSTRUCTION_STORAGE_KEY = 'gemini-live-system-instruction';
+const SYSTEM_INSTRUCTION_PRESETS_STORAGE_KEY = 'gemini-live-system-instruction-presets';
 const MODEL_STORAGE_KEY = 'gemini-live-model';
+
+type SystemInstructionPreset = { name: string; text: string };
+
+function readPresets(): SystemInstructionPreset[] {
+  try {
+    const raw = window.localStorage.getItem(SYSTEM_INSTRUCTION_PRESETS_STORAGE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .filter(
+        (p): p is SystemInstructionPreset =>
+          typeof p === 'object' &&
+          p !== null &&
+          typeof (p as { name?: unknown }).name === 'string' &&
+          typeof (p as { text?: unknown }).text === 'string',
+      )
+      .map((p) => ({ name: p.name.trim(), text: p.text }))
+      .filter((p) => p.name.length > 0);
+  } catch {
+    return [];
+  }
+}
+
+function writePresets(presets: SystemInstructionPreset[]) {
+  try {
+    window.localStorage.setItem(
+      SYSTEM_INSTRUCTION_PRESETS_STORAGE_KEY,
+      JSON.stringify(presets),
+    );
+  } catch {
+    // localStorage may be full or disabled; ignore.
+  }
+}
 const THINKING_LEVEL_LABELS: Record<LiveThinkingLevel, string> = {
   minimal: 'Минимальные (по умолчанию)',
   low: 'Низкие',
@@ -99,6 +134,8 @@ export function LiveConsole() {
   const [webSearchEnabled, setWebSearchEnabled] = useState<boolean>(LIVE_WEB_SEARCH_ENABLED);
   const [thinkingLevel, setThinkingLevel] = useState<LiveThinkingLevel>(LIVE_THINKING_LEVEL_DEFAULT);
   const [systemInstruction, setSystemInstruction] = useState<string>(SYSTEM_INSTRUCTION);
+  const [promptPresets, setPromptPresets] = useState<SystemInstructionPreset[]>([]);
+  const [newPresetName, setNewPresetName] = useState<string>('');
   const [model, setModel] = useState<LiveModelId>(LIVE_MODEL_DEFAULT);
   const [hasResumptionHandle, setHasResumptionHandle] = useState<boolean>(false);
   const thinkingLevelSupported = modelSupportsThinkingLevel(model);
@@ -426,6 +463,50 @@ export function LiveConsole() {
     setSystemInstruction(SYSTEM_INSTRUCTION);
     appendEvent('Промт сброшен к стандартному. Применится при следующем запуске сессии.');
   }, [appendEvent]);
+
+  useEffect(() => {
+    setPromptPresets(readPresets());
+  }, []);
+
+  const savePromptPreset = useCallback(() => {
+    const name = newPresetName.trim();
+    if (!name) {
+      appendEvent('Введи имя пресета перед сохранением.');
+      return;
+    }
+    setPromptPresets((current) => {
+      const existingIndex = current.findIndex((p) => p.name === name);
+      const next: SystemInstructionPreset = { name, text: systemInstruction };
+      const updated =
+        existingIndex >= 0
+          ? current.map((p, i) => (i === existingIndex ? next : p))
+          : [...current, next];
+      writePresets(updated);
+      return updated;
+    });
+    setNewPresetName('');
+    appendEvent(`Пресет «${name}» сохранён.`);
+  }, [appendEvent, newPresetName, systemInstruction]);
+
+  const loadPromptPreset = useCallback(
+    (preset: SystemInstructionPreset) => {
+      setSystemInstruction(preset.text);
+      appendEvent(`Загружен пресет «${preset.name}». Применится при следующем запуске сессии.`);
+    },
+    [appendEvent],
+  );
+
+  const deletePromptPreset = useCallback(
+    (name: string) => {
+      setPromptPresets((current) => {
+        const updated = current.filter((p) => p.name !== name);
+        writePresets(updated);
+        return updated;
+      });
+      appendEvent(`Пресет «${name}» удалён.`);
+    },
+    [appendEvent],
+  );
 
   const dropStoredResumptionHandle = useCallback(() => {
     resumptionHandleRef.current = null;
@@ -961,6 +1042,77 @@ export function LiveConsole() {
               <p className="system-instruction-note">
                 Сохраняется в браузере. Применится при следующем запуске сессии.
               </p>
+            </div>
+            <div className="prompt-presets">
+              <div className="prompt-presets-header">Пресеты промта:</div>
+              <div className="prompt-presets-select-row">
+                <select
+                  className="prompt-presets-select"
+                  value=""
+                  onChange={(event) => {
+                    const name = event.target.value;
+                    if (!name) return;
+                    const preset = promptPresets.find((p) => p.name === name);
+                    if (preset) loadPromptPreset(preset);
+                    event.target.value = '';
+                  }}
+                  disabled={promptPresets.length === 0}
+                >
+                  <option value="">
+                    {promptPresets.length === 0
+                      ? 'Нет сохранённых пресетов'
+                      : `Загрузить пресет (${promptPresets.length})…`}
+                  </option>
+                  {promptPresets.map((preset) => (
+                    <option key={preset.name} value={preset.name}>
+                      {preset.name}
+                    </option>
+                  ))}
+                </select>
+                <select
+                  className="prompt-presets-select prompt-presets-delete-select"
+                  value=""
+                  onChange={(event) => {
+                    const name = event.target.value;
+                    if (!name) return;
+                    deletePromptPreset(name);
+                    event.target.value = '';
+                  }}
+                  disabled={promptPresets.length === 0}
+                  aria-label="Удалить пресет"
+                  title="Удалить пресет"
+                >
+                  <option value="">Удалить…</option>
+                  {promptPresets.map((preset) => (
+                    <option key={preset.name} value={preset.name}>
+                      {preset.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="prompt-presets-save">
+                <input
+                  type="text"
+                  className="prompt-preset-name-input"
+                  placeholder="Имя пресета (например: режиссёр)"
+                  value={newPresetName}
+                  onChange={(event) => setNewPresetName(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter') {
+                      event.preventDefault();
+                      savePromptPreset();
+                    }
+                  }}
+                />
+                <button
+                  type="button"
+                  className="secondary-button"
+                  onClick={savePromptPreset}
+                  disabled={newPresetName.trim().length === 0}
+                >
+                  Сохранить текущий как пресет
+                </button>
+              </div>
             </div>
           </div>
           <div className="memory-section">

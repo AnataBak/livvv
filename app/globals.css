@@ -209,6 +209,78 @@ input {
   line-height: 1.4;
 }
 
+.prompt-presets {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  padding: 0.7rem 0.8rem;
+  border: 1px dashed var(--line);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--panel-strong) 55%, transparent);
+}
+
+.prompt-presets-header {
+  font-size: 0.85rem;
+  color: var(--muted);
+  font-weight: 500;
+}
+
+.prompt-presets-select-row {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.prompt-presets-select {
+  flex: 1 1 12rem;
+  min-width: 0;
+  padding: 0.45rem 0.65rem;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel);
+  color: var(--text);
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+
+.prompt-presets-select:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.prompt-presets-select:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.prompt-presets-delete-select {
+  flex: 0 0 auto;
+  max-width: 12rem;
+  color: var(--muted);
+}
+
+.prompt-presets-save {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.prompt-preset-name-input {
+  flex: 1 1 12rem;
+  min-width: 0;
+  padding: 0.45rem 0.65rem;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel);
+  color: var(--text);
+  font-size: 0.9rem;
+}
+
+.prompt-preset-name-input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
 .memory-section {
   padding: 0.9rem 1rem;
   border: 1px solid var(--line);
