@@ -464,6 +464,11 @@ input {
   transform: none;
 }
 
+.memory-toggle.memory-toggle--on {
+  border-color: rgba(34, 197, 94, 0.6);
+  box-shadow: inset 0 0 0 1px rgba(34, 197, 94, 0.25);
+}
+
 .error-banner {
   margin: 0.85rem 0 0;
   padding: 0.85rem 1rem;
