@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { BrowserAudioPlayer } from '@/lib/client/browser-audio-player';
 import { CameraStreamer } from '@/lib/client/camera-streamer';
 import { GeminiLiveClient } from '@/lib/client/gemini-live-client';
@@ -126,6 +127,7 @@ export function LiveConsole() {
   const [isMicEnabled, setIsMicEnabled] = useState(false);
   const [isCameraEnabled, setIsCameraEnabled] = useState(false);
   const [isCameraFloating, setIsCameraFloating] = useState(false);
+  const [cameraStreamVersion, setCameraStreamVersion] = useState(0);
   const [cameraFacingMode, setCameraFacingMode] = useState<'user' | 'environment'>('environment');
   const [sessionExpiry, setSessionExpiry] = useState<string | null>(null);
   const [authMode, setAuthMode] = useState<AuthMode>('server-token');
@@ -151,6 +153,7 @@ export function LiveConsole() {
   const microphoneRef = useRef<MicrophoneRecorder | null>(null);
   const cameraRef = useRef<CameraStreamer | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
+  const floatingVideoRef = useRef<HTMLVideoElement | null>(null);
   const pendingMessageIdsRef = useRef<{ user: string | null; assistant: string | null }>({
     user: null,
     assistant: null,
@@ -254,6 +257,7 @@ export function LiveConsole() {
 
     const newMode = cameraRef.current.getCurrentFacingMode();
     setCameraFacingMode(newMode);
+    setCameraStreamVersion((v) => v + 1);
     appendEvent(`Камера переключена на ${newMode === 'user' ? 'фронтальную' : 'основную'}.`);
   }, [appendEvent]);
 
@@ -470,6 +474,30 @@ export function LiveConsole() {
     setPromptPresets(readPresets());
   }, []);
 
+  const [isPortalReady, setIsPortalReady] = useState(false);
+  useEffect(() => {
+    setIsPortalReady(true);
+  }, []);
+
+  useEffect(() => {
+    const primary = videoRef.current;
+    const floating = floatingVideoRef.current;
+    if (!primary || !floating) return;
+    if (isCameraEnabled && isCameraFloating) {
+      if (floating.srcObject !== primary.srcObject) {
+        floating.srcObject = primary.srcObject;
+        floating.muted = true;
+        floating.playsInline = true;
+        void floating.play().catch(() => {});
+      }
+    } else {
+      if (floating.srcObject) {
+        floating.pause();
+        floating.srcObject = null;
+      }
+    }
+  }, [isCameraEnabled, isCameraFloating, cameraStreamVersion]);
+
   const savePromptPreset = useCallback(() => {
     const name = newPresetName.trim();
     if (!name) {
@@ -604,6 +632,7 @@ export function LiveConsole() {
 
     setIsCameraEnabled(true);
     setIsCameraFloating(true);
+    setCameraStreamVersion((v) => v + 1);
     appendEvent(`Камера включена (${cameraFacingMode === 'user' ? 'фронтальная' : 'основная'}).`);
   }, [appendEvent, cameraFacingMode]);
 
@@ -1153,11 +1182,7 @@ export function LiveConsole() {
             <h3>Предпросмотр</h3>
           </div>
 
-          <div
-            className={`preview-frame${
-              isCameraEnabled && isCameraFloating ? ' preview-frame--floating' : ''
-            }`}
-          >
+          <div className="preview-frame">
             {isCameraEnabled ? null : <span className="preview-placeholder">Камера выключена</span>}
             <video
               ref={videoRef}
@@ -1166,27 +1191,6 @@ export function LiveConsole() {
               playsInline
               className={isCameraEnabled ? 'video-active' : 'video-idle'}
             />
-            {isCameraEnabled && isCameraFloating ? (
-              <>
-                <button
-                  type="button"
-                  className="preview-close"
-                  onClick={stopCamera}
-                  aria-label="Выключить камеру"
-                  title="Выключить камеру"
-                >
-                  ×
-                </button>
-                <button
-                  type="button"
-                  className="preview-minimize"
-                  onClick={() => setIsCameraFloating(false)}
-                  title="Свернуть — камера продолжит работать"
-                >
-                  Свернуть
-                </button>
-              </>
-            ) : null}
             {isCameraEnabled && !isCameraFloating ? (
               <button
                 type="button"
@@ -1198,6 +1202,37 @@ export function LiveConsole() {
               </button>
             ) : null}
           </div>
+          {isPortalReady && isCameraEnabled && isCameraFloating
+            ? createPortal(
+                <div className="floating-camera" role="dialog" aria-label="Плавающее превью камеры">
+                  <video
+                    ref={floatingVideoRef}
+                    autoPlay
+                    muted
+                    playsInline
+                    className="floating-camera-video"
+                  />
+                  <button
+                    type="button"
+                    className="floating-camera-close"
+                    onClick={stopCamera}
+                    aria-label="Выключить камеру"
+                    title="Выключить камеру"
+                  >
+                    ×
+                  </button>
+                  <button
+                    type="button"
+                    className="floating-camera-minimize"
+                    onClick={() => setIsCameraFloating(false)}
+                    title="Свернуть — камера продолжит работать"
+                  >
+                    Свернуть
+                  </button>
+                </div>,
+                document.body,
+              )
+            : null}
         </div>
 
         <div className="console-panel transcript-panel">
