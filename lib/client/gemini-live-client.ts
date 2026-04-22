@@ -5,6 +5,78 @@ import {
 } from '@/lib/live-session-config';
 import { parseLiveMessage, type LiveServerEvent } from '@/lib/client/live-message-parser';
 
+type ServerMessageShape = {
+  setupComplete?: unknown;
+  sessionResumptionUpdate?: { resumable?: boolean };
+  serverContent?: {
+    interrupted?: boolean;
+    turnComplete?: boolean;
+    generationComplete?: boolean;
+    inputTranscription?: { text?: string; finished?: boolean };
+    outputTranscription?: { text?: string; finished?: boolean };
+    modelTurn?: {
+      parts?: Array<{
+        text?: string;
+        inlineData?: { data?: string; mimeType?: string };
+      }>;
+    };
+  };
+  error?: { message?: string };
+};
+
+export function summarizeServerMessage(raw: unknown): string {
+  if (!raw || typeof raw !== 'object') return 'unknown';
+  const msg = raw as ServerMessageShape;
+  const bits: string[] = [];
+
+  if (msg.setupComplete) bits.push('setup-complete');
+  if (msg.error?.message) bits.push(`error="${msg.error.message}"`);
+
+  const sc = msg.serverContent;
+  if (sc) {
+    const parts = sc.modelTurn?.parts ?? [];
+    let audioBytes = 0;
+    let audioChunks = 0;
+    const textSnippets: string[] = [];
+    for (const p of parts) {
+      if (p.inlineData?.data) {
+        audioChunks += 1;
+        audioBytes += p.inlineData.data.length;
+      }
+      if (typeof p.text === 'string' && p.text.length > 0) {
+        textSnippets.push(p.text);
+      }
+    }
+    if (audioChunks > 0) bits.push(`audio×${audioChunks} (${audioBytes}B base64)`);
+    if (textSnippets.length > 0) {
+      const joined = textSnippets.join('').replace(/\s+/g, ' ').trim();
+      const preview = joined.length > 80 ? `${joined.slice(0, 80)}…` : joined;
+      bits.push(`TEXT-PART×${textSnippets.length} "${preview}"`);
+    }
+    const out = sc.outputTranscription;
+    if (out?.text) {
+      const t = out.text.replace(/\s+/g, ' ').trim();
+      const preview = t.length > 60 ? `${t.slice(0, 60)}…` : t;
+      bits.push(`out-trans${out.finished ? '✔' : ''}="${preview}"`);
+    }
+    const inp = sc.inputTranscription;
+    if (inp?.text) {
+      const t = inp.text.replace(/\s+/g, ' ').trim();
+      const preview = t.length > 60 ? `${t.slice(0, 60)}…` : t;
+      bits.push(`in-trans${inp.finished ? '✔' : ''}="${preview}"`);
+    }
+    if (sc.interrupted) bits.push('INTERRUPTED');
+    if (sc.generationComplete) bits.push('generation-complete');
+    if (sc.turnComplete) bits.push('turn-complete');
+  }
+
+  if (msg.sessionResumptionUpdate) {
+    bits.push(`resumption-update(resumable=${Boolean(msg.sessionResumptionUpdate.resumable)})`);
+  }
+
+  return bits.length > 0 ? bits.join(' | ') : 'empty';
+}
+
 type ClientCallbacks = {
   onOpen?: () => void;
   onClose?: (reason: string) => void;
@@ -111,11 +183,10 @@ export class GeminiLiveClient {
           const rawData = await this.readMessageData(event.data);
           const parsed = JSON.parse(rawData);
           if (typeof window !== 'undefined') {
-            // Diagnostic log so we can see the exact shape of what Gemini
-            // sends back (model turns with text/inlineData parts, transcripts,
-            // interrupts, etc). Visible in the browser DevTools console under
-            // the [gemini-live] tag; no effect on users who don't open it.
-            console.debug('[gemini-live] server message', parsed);
+            // Diagnostic: compact summary visible without expanding objects.
+            // Shows per-message what Gemini actually sent — audio bytes, text
+            // parts, transcripts, interrupt/turn-complete flags.
+            console.debug('[gemini-live]', summarizeServerMessage(parsed), parsed);
           }
           const events = parseLiveMessage(parsed);
 
