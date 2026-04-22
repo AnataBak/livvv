@@ -145,6 +145,7 @@ export class GeminiLiveClient {
   private resumptionHandle: string | undefined;
   private systemInstruction: string | undefined;
   private model: LiveModelId;
+  private language: string | undefined;
   private pollInterval: NodeJS.Timeout | null = null;
   private isConnected = false;
   private socket: WebSocket | null = null;
@@ -159,6 +160,7 @@ export class GeminiLiveClient {
     resumptionHandle?: string,
     systemInstruction?: string,
     model: LiveModelId = LIVE_MODEL_DEFAULT,
+    language?: string,
   ) {
     this.auth = auth;
     this.callbacks = callbacks;
@@ -169,6 +171,7 @@ export class GeminiLiveClient {
     this.resumptionHandle = resumptionHandle;
     this.systemInstruction = systemInstruction;
     this.model = model;
+    this.language = language;
   }
 
   async connect() {
@@ -205,6 +208,7 @@ export class GeminiLiveClient {
               this.resumptionHandle,
               this.systemInstruction,
               this.model,
+              this.language,
             ),
           ),
         );
@@ -257,11 +261,14 @@ export class GeminiLiveClient {
         body: JSON.stringify({
           action: 'connect',
           token,
+          temperature: this.temperature,
+          voice: this.voice,
           webSearchEnabled: this.webSearchEnabled,
           thinkingLevel: this.thinkingLevel,
           resumptionHandle: this.resumptionHandle,
           systemInstruction: this.systemInstruction,
           model: this.model,
+          language: this.language,
         }),
       });
 

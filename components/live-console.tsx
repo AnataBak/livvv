@@ -8,10 +8,12 @@ import { GeminiLiveClient } from '@/lib/client/gemini-live-client';
 import { MicrophoneRecorder } from '@/lib/client/microphone-recorder';
 import type { LiveServerEvent } from '@/lib/client/live-message-parser';
 import {
+  LIVE_LANGUAGES,
   LIVE_MODELS,
   LIVE_MODEL_DEFAULT,
   LIVE_THINKING_LEVELS,
   LIVE_THINKING_LEVEL_DEFAULT,
+  LIVE_VOICES,
   LIVE_WEB_SEARCH_ENABLED,
   SYSTEM_INSTRUCTION,
   isLiveModelId,
@@ -46,6 +48,7 @@ const initialEvents: EventItem[] = [{ id: 'event-0', text: 'Все готово 
 const API_KEY_STORAGE_KEY = 'gemini-live-api-key';
 const TEMPERATURE_STORAGE_KEY = 'gemini-live-temperature';
 const VOICE_STORAGE_KEY = 'gemini-live-voice';
+const LANGUAGE_STORAGE_KEY = 'gemini-live-language';
 const WEB_SEARCH_STORAGE_KEY = 'gemini-live-web-search';
 const THINKING_LEVEL_STORAGE_KEY = 'gemini-live-thinking-level';
 const RESUMPTION_HANDLE_STORAGE_KEY = 'gemini-live-session-handle';
@@ -134,6 +137,7 @@ export function LiveConsole() {
   const [isBusy, setIsBusy] = useState(false);
   const [temperature, setTemperature] = useState<number>(0.6);
   const [voice, setVoice] = useState<string>('Puck');
+  const [language, setLanguage] = useState<string>('');
   const [webSearchEnabled, setWebSearchEnabled] = useState<boolean>(LIVE_WEB_SEARCH_ENABLED);
   const [thinkingLevel, setThinkingLevel] = useState<LiveThinkingLevel>(LIVE_THINKING_LEVEL_DEFAULT);
   const [systemInstruction, setSystemInstruction] = useState<string>(SYSTEM_INSTRUCTION);
@@ -390,6 +394,13 @@ export function LiveConsole() {
   }, [appendEvent]);
 
   useEffect(() => {
+    const savedLanguage = window.localStorage.getItem(LANGUAGE_STORAGE_KEY);
+    if (savedLanguage !== null) {
+      setLanguage(savedLanguage);
+    }
+  }, []);
+
+  useEffect(() => {
     const savedWebSearch = window.localStorage.getItem(WEB_SEARCH_STORAGE_KEY);
     if (savedWebSearch) {
       setWebSearchEnabled(savedWebSearch === 'true');
@@ -589,6 +600,10 @@ export function LiveConsole() {
   }, [voice]);
 
   useEffect(() => {
+    window.localStorage.setItem(LANGUAGE_STORAGE_KEY, language);
+  }, [language]);
+
+  useEffect(() => {
     window.localStorage.setItem(WEB_SEARCH_STORAGE_KEY, String(webSearchEnabled));
   }, [webSearchEnabled]);
 
@@ -704,6 +719,7 @@ export function LiveConsole() {
             resumptionHandleRef.current ?? undefined,
             systemInstruction.trim().length > 0 ? systemInstruction : undefined,
             model,
+            language || undefined,
           );
         } else {
           setAuthMode('server-token');
@@ -754,6 +770,7 @@ export function LiveConsole() {
             resumptionHandleRef.current ?? undefined,
             systemInstruction.trim().length > 0 ? systemInstruction : undefined,
             model,
+            language || undefined,
           );
         }
 
@@ -777,7 +794,7 @@ export function LiveConsole() {
         setIsBusy(false);
       }
     },
-    [apiKeyInput, appendEvent, fetchEphemeralToken, handleLiveEvent, startMicrophone, teardownSession, temperature, voice, webSearchEnabled, thinkingLevel, thinkingLevelSupported, systemInstruction, model],
+    [apiKeyInput, appendEvent, fetchEphemeralToken, handleLiveEvent, startMicrophone, teardownSession, temperature, voice, webSearchEnabled, thinkingLevel, thinkingLevelSupported, systemInstruction, model, language],
   );
 
   const stopConversation = useCallback(() => {
@@ -1014,13 +1031,32 @@ export function LiveConsole() {
               value={voice}
               onChange={(e) => setVoice(e.target.value)}
             >
-              <option value="Puck">Puck</option>
-              <option value="KORE">KORE</option>
-              <option value="Aoede">Aoede</option>
-              <option value="Charon">Charon</option>
-              <option value="Fenrir">Fenrir</option>
-              <option value="Kore">Kore</option>
+              {LIVE_VOICES.map((v) => (
+                <option key={v.id} value={v.id}>
+                  {`${v.id} — ${v.style} (${v.gender})`}
+                </option>
+              ))}
             </select>
+          </div>
+          <div className="voice-section">
+            <label htmlFor="language-select">Язык:</label>
+            <select
+              id="language-select"
+              value={language}
+              onChange={(e) => setLanguage(e.target.value)}
+              disabled={!modelSupportsThinkingLevel(model)}
+            >
+              {LIVE_LANGUAGES.map((l) => (
+                <option key={l.code || 'auto'} value={l.code}>
+                  {l.label}
+                </option>
+              ))}
+            </select>
+            <p className="thinking-note">
+              {modelSupportsThinkingLevel(model)
+                ? 'Применяется при следующем запуске сессии. «Авто» — модель определяет язык по твоей речи.'
+                : 'У Gemini 2.5 (native audio) язык выбирается автоматически — явный выбор недоступен.'}
+            </p>
           </div>
           <div className="thinking-section" data-disabled={!thinkingLevelSupported}>
             <label htmlFor="thinking-level-select">Размышления модели:</label>
