@@ -208,9 +208,14 @@ export function LiveConsole() {
           appendEvent('Сессия Gemini Live готова.');
           return;
         case 'audio':
+          // Audio from the model signals the user's turn is over: close their
+          // pending chat bubble so their next utterance renders as a new
+          // message instead of being appended to the previous one.
+          finalizePendingMessage('user');
           await audioPlayerRef.current?.enqueueBase64Pcm(event.data);
           return;
         case 'text':
+          finalizePendingMessage('user');
           setMessages((current) => [
             ...current,
             { id: nextMessageId(), role: 'assistant', text: event.text },
@@ -220,15 +225,21 @@ export function LiveConsole() {
           upsertTranscript('user', event.text, event.finished);
           return;
         case 'output-transcription':
+          // Same reasoning as 'audio': when the model starts speaking, the
+          // user's turn has ended — finalize their bubble so the next
+          // utterance is a new message.
+          finalizePendingMessage('user');
           upsertTranscript('assistant', event.text, event.finished);
           return;
         case 'interrupted':
           audioPlayerRef.current?.interrupt();
           finalizePendingMessage('assistant');
+          finalizePendingMessage('user');
           appendEvent('Ответ модели был прерван.');
           return;
         case 'turn-complete':
           finalizePendingMessage('assistant');
+          finalizePendingMessage('user');
           appendEvent('Ход завершён.');
           return;
         case 'session-resumption-update':
