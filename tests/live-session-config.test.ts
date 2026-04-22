@@ -1,8 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import {
   buildSessionSetupMessage,
+  isLiveModelId,
   isLiveThinkingLevel,
+  modelSupportsThinkingLevel,
   LIVE_MODEL,
+  LIVE_MODELS,
+  LIVE_MODEL_DEFAULT,
   LIVE_THINKING_LEVELS,
   LIVE_THINKING_LEVEL_DEFAULT,
   SYSTEM_INSTRUCTION,
@@ -128,5 +132,75 @@ describe('live session config', () => {
 
   it('throws a clear error when GEMINI_API_KEY is missing', () => {
     expect(() => getGeminiApiKey({})).toThrow(/GEMINI_API_KEY is not set/);
+  });
+
+  it('exposes both Live models and defaults to 3.1', () => {
+    expect(LIVE_MODEL_DEFAULT).toBe('gemini-3.1-flash-live-preview');
+    expect(LIVE_MODEL).toBe(LIVE_MODEL_DEFAULT);
+    const ids = LIVE_MODELS.map((m) => m.id);
+    expect(ids).toContain('gemini-3.1-flash-live-preview');
+    expect(ids).toContain('gemini-2.5-flash-native-audio-preview-12-2025');
+  });
+
+  it('validates supported model ids', () => {
+    expect(isLiveModelId('gemini-3.1-flash-live-preview')).toBe(true);
+    expect(isLiveModelId('gemini-2.5-flash-native-audio-preview-12-2025')).toBe(true);
+    expect(isLiveModelId('gemini-pro')).toBe(false);
+    expect(isLiveModelId(undefined)).toBe(false);
+  });
+
+  it('only 3.1 Live supports thinkingLevel', () => {
+    expect(modelSupportsThinkingLevel('gemini-3.1-flash-live-preview')).toBe(true);
+    expect(modelSupportsThinkingLevel('gemini-2.5-flash-native-audio-preview-12-2025')).toBe(false);
+  });
+
+  it('threads a custom model id into the setup payload', () => {
+    const payload = buildSessionSetupMessage(
+      0.6,
+      'Puck',
+      false,
+      undefined,
+      undefined,
+      undefined,
+      'gemini-2.5-flash-native-audio-preview-12-2025',
+    );
+    expect(payload.setup.model).toBe('models/gemini-2.5-flash-native-audio-preview-12-2025');
+  });
+
+  it('drops thinkingConfig when model is 2.5 even if a thinking level is passed', () => {
+    const payload = buildSessionSetupMessage(
+      0.6,
+      'Puck',
+      false,
+      'high',
+      undefined,
+      undefined,
+      'gemini-2.5-flash-native-audio-preview-12-2025',
+    );
+    const generationConfig = payload.setup.generationConfig as Record<string, unknown>;
+    expect(generationConfig.thinkingConfig).toBeUndefined();
+  });
+
+  it('threads the selected model into the ephemeral token config', () => {
+    const payload = buildLiveTokenConfig(
+      0,
+      false,
+      undefined,
+      'gemini-2.5-flash-native-audio-preview-12-2025',
+    );
+    expect(payload.liveConnectConstraints.model).toBe(
+      'gemini-2.5-flash-native-audio-preview-12-2025',
+    );
+  });
+
+  it('drops thinkingConfig from the token config when model is 2.5', () => {
+    const payload = buildLiveTokenConfig(
+      0,
+      false,
+      'medium',
+      'gemini-2.5-flash-native-audio-preview-12-2025',
+    );
+    const config = payload.liveConnectConstraints.config as Record<string, unknown>;
+    expect(config.thinkingConfig).toBeUndefined();
   });
 });

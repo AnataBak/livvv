@@ -7,12 +7,16 @@ import { GeminiLiveClient } from '@/lib/client/gemini-live-client';
 import { MicrophoneRecorder } from '@/lib/client/microphone-recorder';
 import type { LiveServerEvent } from '@/lib/client/live-message-parser';
 import {
-  LIVE_MODEL,
+  LIVE_MODELS,
+  LIVE_MODEL_DEFAULT,
   LIVE_THINKING_LEVELS,
   LIVE_THINKING_LEVEL_DEFAULT,
   LIVE_WEB_SEARCH_ENABLED,
   SYSTEM_INSTRUCTION,
+  isLiveModelId,
   isLiveThinkingLevel,
+  modelSupportsThinkingLevel,
+  type LiveModelId,
   type LiveThinkingLevel,
 } from '@/lib/live-session-config';
 
@@ -45,6 +49,7 @@ const WEB_SEARCH_STORAGE_KEY = 'gemini-live-web-search';
 const THINKING_LEVEL_STORAGE_KEY = 'gemini-live-thinking-level';
 const RESUMPTION_HANDLE_STORAGE_KEY = 'gemini-live-session-handle';
 const SYSTEM_INSTRUCTION_STORAGE_KEY = 'gemini-live-system-instruction';
+const MODEL_STORAGE_KEY = 'gemini-live-model';
 const THINKING_LEVEL_LABELS: Record<LiveThinkingLevel, string> = {
   minimal: 'Минимальные (по умолчанию)',
   low: 'Низкие',
@@ -77,7 +82,9 @@ export function LiveConsole() {
   const [webSearchEnabled, setWebSearchEnabled] = useState<boolean>(LIVE_WEB_SEARCH_ENABLED);
   const [thinkingLevel, setThinkingLevel] = useState<LiveThinkingLevel>(LIVE_THINKING_LEVEL_DEFAULT);
   const [systemInstruction, setSystemInstruction] = useState<string>(SYSTEM_INSTRUCTION);
+  const [model, setModel] = useState<LiveModelId>(LIVE_MODEL_DEFAULT);
   const [hasResumptionHandle, setHasResumptionHandle] = useState<boolean>(false);
+  const thinkingLevelSupported = modelSupportsThinkingLevel(model);
   const resumptionHandleRef = useRef<string | null>(null);
 
   const clientRef = useRef<GeminiLiveClient | null>(null);
@@ -266,13 +273,14 @@ export function LiveConsole() {
   );
 
   const fetchEphemeralToken = useCallback(
-    async (searchEnabled: boolean, thinkingLevelValue: LiveThinkingLevel) => {
+    async (searchEnabled: boolean, thinkingLevelValue: LiveThinkingLevel, modelId: LiveModelId) => {
     const response = await fetch('/api/live-token', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         webSearchEnabled: searchEnabled,
         thinkingLevel: thinkingLevelValue,
+        model: modelId,
       }),
     });
 
@@ -344,6 +352,21 @@ export function LiveConsole() {
       setSystemInstruction(savedInstruction);
     }
   }, []);
+
+  useEffect(() => {
+    const savedModel = window.localStorage.getItem(MODEL_STORAGE_KEY);
+    if (savedModel && isLiveModelId(savedModel)) {
+      setModel(savedModel);
+    }
+  }, []);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(MODEL_STORAGE_KEY, model);
+    } catch {
+      // ignore localStorage errors
+    }
+  }, [model]);
 
   useEffect(() => {
     try {
@@ -507,17 +530,22 @@ export function LiveConsole() {
             temperature,
             voice,
             webSearchEnabled,
-            thinkingLevel,
+            thinkingLevelSupported ? thinkingLevel : undefined,
             resumptionHandleRef.current ?? undefined,
             systemInstruction.trim().length > 0 ? systemInstruction : undefined,
+            model,
           );
         } else {
           setAuthMode('server-token');
           appendEvent('Запрашивается временный токен через серверный маршрут.');
           appendEvent(
-            `Параметры сессии: температура ${temperature}, голос ${voice}, размышления ${thinkingLevel}.`,
+            `Параметры сессии: температура ${temperature}, голос ${voice}, размышления ${thinkingLevelSupported ? thinkingLevel : 'не поддерживаются для этой модели'}.`,
           );
-          const tokenData = await fetchEphemeralToken(webSearchEnabled, thinkingLevel);
+          const tokenData = await fetchEphemeralToken(
+            webSearchEnabled,
+            thinkingLevelSupported ? thinkingLevel : LIVE_THINKING_LEVEL_DEFAULT,
+            model,
+          );
           setSessionExpiry(tokenData.expireTime);
           client = new GeminiLiveClient(
             { accessToken: tokenData.token },
@@ -546,9 +574,10 @@ export function LiveConsole() {
             temperature,
             voice,
             webSearchEnabled,
-            thinkingLevel,
+            thinkingLevelSupported ? thinkingLevel : undefined,
             resumptionHandleRef.current ?? undefined,
             systemInstruction.trim().length > 0 ? systemInstruction : undefined,
+            model,
           );
         }
 
@@ -572,7 +601,7 @@ export function LiveConsole() {
         setIsBusy(false);
       }
     },
-    [apiKeyInput, appendEvent, fetchEphemeralToken, handleLiveEvent, startMicrophone, teardownSession, temperature, voice, webSearchEnabled, thinkingLevel, systemInstruction],
+    [apiKeyInput, appendEvent, fetchEphemeralToken, handleLiveEvent, startMicrophone, teardownSession, temperature, voice, webSearchEnabled, thinkingLevel, thinkingLevelSupported, systemInstruction, model],
   );
 
   const stopConversation = useCallback(() => {
@@ -667,9 +696,26 @@ export function LiveConsole() {
             <span className="status-label">Авторизация</span>
             <strong>{effectiveAuthLabel}</strong>
           </div>
-          <div className="status-card">
+          <div className="status-card status-card--model">
             <span className="status-label">Модель</span>
-            <strong>{LIVE_MODEL}</strong>
+            <select
+              className="status-model-select"
+              value={model}
+              disabled={status === 'connecting' || status === 'active'}
+              onChange={(event) => {
+                const next = event.target.value;
+                if (isLiveModelId(next)) {
+                  setModel(next);
+                }
+              }}
+              title="Выбор модели Gemini Live. Применится при следующем запуске сессии."
+            >
+              {LIVE_MODELS.map((m) => (
+                <option key={m.id} value={m.id}>
+                  {m.label}
+                </option>
+              ))}
+            </select>
           </div>
           <div className="status-card">
             <span className="status-label">Сессия истекает</span>
@@ -805,11 +851,12 @@ export function LiveConsole() {
               <option value="Kore">Kore</option>
             </select>
           </div>
-          <div className="thinking-section">
+          <div className="thinking-section" data-disabled={!thinkingLevelSupported}>
             <label htmlFor="thinking-level-select">Размышления модели:</label>
             <select
               id="thinking-level-select"
               value={thinkingLevel}
+              disabled={!thinkingLevelSupported}
               onChange={(event) => {
                 const next = event.target.value;
                 if (isLiveThinkingLevel(next)) {
@@ -824,7 +871,9 @@ export function LiveConsole() {
               ))}
             </select>
             <p className="thinking-note">
-              По умолчанию «минимальные» — самая низкая задержка. Применяется при следующем запуске сессии.
+              {thinkingLevelSupported
+                ? 'По умолчанию «минимальные» — самая низкая задержка. Применяется при следующем запуске сессии.'
+                : 'Недоступно для выбранной модели (Gemini 2.5 Live). Смените модель, чтобы управлять размышлениями.'}
             </p>
           </div>
           <div className="system-instruction-section">
