@@ -110,6 +110,13 @@ export class GeminiLiveClient {
         try {
           const rawData = await this.readMessageData(event.data);
           const parsed = JSON.parse(rawData);
+          if (typeof window !== 'undefined') {
+            // Diagnostic log so we can see the exact shape of what Gemini
+            // sends back (model turns with text/inlineData parts, transcripts,
+            // interrupts, etc). Visible in the browser DevTools console under
+            // the [gemini-live] tag; no effect on users who don't open it.
+            console.debug('[gemini-live] server message', parsed);
+          }
           const events = parseLiveMessage(parsed);
 
           for (const liveEvent of events) {
