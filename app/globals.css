@@ -209,6 +209,104 @@ input {
   line-height: 1.4;
 }
 
+.prompt-presets {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  padding: 0.7rem 0.8rem;
+  border: 1px dashed var(--line);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--panel-strong) 55%, transparent);
+}
+
+.prompt-presets-header {
+  font-size: 0.85rem;
+  color: var(--muted);
+  font-weight: 500;
+}
+
+.prompt-presets-empty {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.82rem;
+  line-height: 1.4;
+}
+
+.prompt-presets-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.prompt-preset-item {
+  display: inline-flex;
+  align-items: stretch;
+  background: var(--panel-strong);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.prompt-preset-load {
+  appearance: none;
+  background: transparent;
+  color: var(--text);
+  border: none;
+  padding: 0.35rem 0.75rem;
+  font-size: 0.85rem;
+  cursor: pointer;
+  max-width: 18rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.prompt-preset-load:hover {
+  background: color-mix(in srgb, var(--accent) 15%, transparent);
+}
+
+.prompt-preset-delete {
+  appearance: none;
+  background: transparent;
+  color: var(--muted);
+  border: none;
+  border-left: 1px solid var(--line);
+  padding: 0 0.55rem;
+  font-size: 1rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.prompt-preset-delete:hover {
+  color: #ff7272;
+  background: color-mix(in srgb, #ff7272 12%, transparent);
+}
+
+.prompt-presets-save {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.prompt-preset-name-input {
+  flex: 1 1 12rem;
+  min-width: 0;
+  padding: 0.45rem 0.65rem;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel);
+  color: var(--text);
+  font-size: 0.9rem;
+}
+
+.prompt-preset-name-input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
 .memory-section {
   padding: 0.9rem 1rem;
   border: 1px solid var(--line);
