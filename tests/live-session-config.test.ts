@@ -5,6 +5,7 @@ import {
   LIVE_MODEL,
   LIVE_THINKING_LEVELS,
   LIVE_THINKING_LEVEL_DEFAULT,
+  SYSTEM_INSTRUCTION,
 } from '@/lib/live-session-config';
 import { buildLiveTokenConfig, getGeminiApiKey } from '@/lib/server/live-token';
 
@@ -60,6 +61,21 @@ describe('live session config', () => {
     const payload = buildSessionSetupMessage(0.6, 'Puck', false, undefined, 'handle-abc');
 
     expect(payload.setup.sessionResumption).toEqual({ handle: 'handle-abc' });
+  });
+
+  it('uses the default SYSTEM_INSTRUCTION when no custom prompt is provided', () => {
+    const payload = buildSessionSetupMessage();
+    const systemInstruction = payload.setup.systemInstruction as { parts: Array<{ text: string }> };
+
+    expect(systemInstruction.parts[0].text).toBe(SYSTEM_INSTRUCTION);
+  });
+
+  it('substitutes a custom system instruction when provided', () => {
+    const custom = 'Ты режиссёр-консультант, отвечай только списками идей.';
+    const payload = buildSessionSetupMessage(0.6, 'Puck', false, undefined, undefined, custom);
+    const systemInstruction = payload.setup.systemInstruction as { parts: Array<{ text: string }> };
+
+    expect(systemInstruction.parts[0].text).toBe(custom);
   });
 
   it('defaults the thinking level to "minimal"', () => {

@@ -141,6 +141,7 @@ export class GeminiLiveClient {
   private webSearchEnabled: boolean;
   private thinkingLevel: LiveThinkingLevel | undefined;
   private resumptionHandle: string | undefined;
+  private systemInstruction: string | undefined;
   private pollInterval: NodeJS.Timeout | null = null;
   private isConnected = false;
   private socket: WebSocket | null = null;
@@ -153,6 +154,7 @@ export class GeminiLiveClient {
     webSearchEnabled: boolean = false,
     thinkingLevel?: LiveThinkingLevel,
     resumptionHandle?: string,
+    systemInstruction?: string,
   ) {
     this.auth = auth;
     this.callbacks = callbacks;
@@ -161,6 +163,7 @@ export class GeminiLiveClient {
     this.webSearchEnabled = webSearchEnabled;
     this.thinkingLevel = thinkingLevel;
     this.resumptionHandle = resumptionHandle;
+    this.systemInstruction = systemInstruction;
   }
 
   async connect() {
@@ -195,6 +198,7 @@ export class GeminiLiveClient {
               this.webSearchEnabled,
               this.thinkingLevel,
               this.resumptionHandle,
+              this.systemInstruction,
             ),
           ),
         );
@@ -250,6 +254,7 @@ export class GeminiLiveClient {
           webSearchEnabled: this.webSearchEnabled,
           thinkingLevel: this.thinkingLevel,
           resumptionHandle: this.resumptionHandle,
+          systemInstruction: this.systemInstruction,
         }),
       });
 

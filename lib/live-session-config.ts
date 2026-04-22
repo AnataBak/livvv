@@ -32,6 +32,7 @@ export function buildSessionSetupMessage(
   webSearchEnabled: boolean = LIVE_WEB_SEARCH_ENABLED,
   thinkingLevel?: LiveThinkingLevel,
   resumptionHandle?: string,
+  systemInstruction: string = SYSTEM_INSTRUCTION,
 ) {
   const generationConfig: Record<string, unknown> = {
     responseModalities: ['AUDIO'],
@@ -60,7 +61,7 @@ export function buildSessionSetupMessage(
       generationConfig,
       tools: webSearchEnabled ? [{ googleSearch: {} }] : undefined,
       systemInstruction: {
-        parts: [{ text: SYSTEM_INSTRUCTION }],
+        parts: [{ text: systemInstruction }],
       },
       inputAudioTranscription: {},
       outputAudioTranscription: {},
