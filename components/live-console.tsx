@@ -18,6 +18,7 @@ import {
   SYSTEM_INSTRUCTION,
   isLiveModelId,
   isLiveThinkingLevel,
+  modelSupportsSessionResumption,
   modelSupportsThinkingLevel,
   type LiveModelId,
   type LiveThinkingLevel,
@@ -56,6 +57,7 @@ const RESUMPTION_HANDLE_MODEL_STORAGE_KEY = 'gemini-live-session-handle-model';
 const SYSTEM_INSTRUCTION_STORAGE_KEY = 'gemini-live-system-instruction';
 const SYSTEM_INSTRUCTION_PRESETS_STORAGE_KEY = 'gemini-live-system-instruction-presets';
 const MODEL_STORAGE_KEY = 'gemini-live-model';
+const MEMORY_ENABLED_STORAGE_KEY = 'gemini-live-memory-enabled';
 
 type SystemInstructionPreset = { name: string; text: string };
 
@@ -145,12 +147,17 @@ export function LiveConsole() {
   const [newPresetName, setNewPresetName] = useState<string>('');
   const [model, setModel] = useState<LiveModelId>(LIVE_MODEL_DEFAULT);
   const [hasResumptionHandle, setHasResumptionHandle] = useState<boolean>(false);
+  const [memoryEnabled, setMemoryEnabled] = useState<boolean>(true);
   const thinkingLevelSupported = modelSupportsThinkingLevel(model);
   const resumptionHandleRef = useRef<string | null>(null);
   const modelRef = useRef<LiveModelId>(model);
   useEffect(() => {
     modelRef.current = model;
   }, [model]);
+  const memoryEnabledRef = useRef<boolean>(memoryEnabled);
+  useEffect(() => {
+    memoryEnabledRef.current = memoryEnabled;
+  }, [memoryEnabled]);
 
   const clientRef = useRef<GeminiLiveClient | null>(null);
   const audioPlayerRef = useRef<BrowserAudioPlayer | null>(null);
@@ -320,6 +327,12 @@ export function LiveConsole() {
         case 'session-resumption-update':
           // Gemini periodically issues a new handle we can use to resume this
           // dialogue later (even after stopping the session or reloading).
+          // When memory is disabled, we ignore these updates so the saved
+          // handle (from the last "memory on" session) stays untouched and
+          // this session remains a throwaway branch.
+          if (!memoryEnabledRef.current) {
+            return;
+          }
           if (event.resumable && event.handle) {
             resumptionHandleRef.current = event.handle;
             try {
@@ -399,6 +412,17 @@ export function LiveConsole() {
       setLanguage(savedLanguage);
     }
   }, []);
+
+  useEffect(() => {
+    const saved = window.localStorage.getItem(MEMORY_ENABLED_STORAGE_KEY);
+    if (saved !== null) {
+      setMemoryEnabled(saved !== 'false');
+    }
+  }, []);
+
+  useEffect(() => {
+    window.localStorage.setItem(MEMORY_ENABLED_STORAGE_KEY, memoryEnabled ? 'true' : 'false');
+  }, [memoryEnabled]);
 
   useEffect(() => {
     const savedWebSearch = window.localStorage.getItem(WEB_SEARCH_STORAGE_KEY);
@@ -716,7 +740,7 @@ export function LiveConsole() {
             voice,
             webSearchEnabled,
             thinkingLevelSupported ? thinkingLevel : undefined,
-            resumptionHandleRef.current ?? undefined,
+            memoryEnabled ? resumptionHandleRef.current ?? undefined : undefined,
             systemInstruction.trim().length > 0 ? systemInstruction : undefined,
             model,
             language || undefined,
@@ -767,7 +791,7 @@ export function LiveConsole() {
             voice,
             webSearchEnabled,
             thinkingLevelSupported ? thinkingLevel : undefined,
-            resumptionHandleRef.current ?? undefined,
+            memoryEnabled ? resumptionHandleRef.current ?? undefined : undefined,
             systemInstruction.trim().length > 0 ? systemInstruction : undefined,
             model,
             language || undefined,
@@ -794,7 +818,7 @@ export function LiveConsole() {
         setIsBusy(false);
       }
     },
-    [apiKeyInput, appendEvent, fetchEphemeralToken, handleLiveEvent, startMicrophone, teardownSession, temperature, voice, webSearchEnabled, thinkingLevel, thinkingLevelSupported, systemInstruction, model, language],
+    [apiKeyInput, appendEvent, fetchEphemeralToken, handleLiveEvent, startMicrophone, teardownSession, temperature, voice, webSearchEnabled, thinkingLevel, thinkingLevelSupported, systemInstruction, model, language, memoryEnabled],
   );
 
   const stopConversation = useCallback(() => {
@@ -927,11 +951,19 @@ export function LiveConsole() {
             Остановить
           </button>
           <button
-            className="secondary-button"
-            onClick={clearSessionMemory}
-            disabled={!hasResumptionHandle || isBusy}
+            type="button"
+            className={`secondary-button memory-toggle${memoryEnabled ? ' memory-toggle--on' : ''}`}
+            onClick={() => setMemoryEnabled((v) => !v)}
+            disabled={!modelSupportsSessionResumption(model)}
+            title={
+              !modelSupportsSessionResumption(model)
+                ? 'У Gemini 2.5 (native audio) память между сессиями не поддерживается.'
+                : memoryEnabled
+                  ? 'Сейчас ВКЛ — следующая сессия продолжит прошлый диалог. Нажми, чтобы выключить.'
+                  : 'Сейчас ВЫКЛ — каждая сессия стартует с чистого листа. Сохранённый прошлый диалог не тронут и вернётся, когда снова включишь.'
+            }
           >
-            Очистить память диалога
+            {memoryEnabled ? 'Память: вкл ✅' : 'Память: выкл'}
           </button>
         </div>
 
