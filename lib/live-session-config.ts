@@ -3,11 +3,17 @@ export const LIVE_MODELS = [
     id: 'gemini-3.1-flash-live-preview',
     label: 'Gemini 3.1 Flash Live (по умолчанию)',
     supportsThinkingLevel: true,
+    supportsSessionResumption: true,
+    supportsContextWindowCompression: true,
   },
   {
     id: 'gemini-2.5-flash-native-audio-preview-12-2025',
     label: 'Gemini 2.5 Flash Live (native audio)',
     supportsThinkingLevel: false,
+    // Native audio rejects sessionResumption / contextWindowCompression with
+    // an immediate close, so we don't send them for this model.
+    supportsSessionResumption: false,
+    supportsContextWindowCompression: false,
   },
 ] as const;
 
@@ -26,6 +32,14 @@ export function isLiveModelId(value: unknown): value is LiveModelId {
 
 export function modelSupportsThinkingLevel(model: LiveModelId): boolean {
   return Boolean(LIVE_MODELS.find((m) => m.id === model)?.supportsThinkingLevel);
+}
+
+export function modelSupportsSessionResumption(model: LiveModelId): boolean {
+  return Boolean(LIVE_MODELS.find((m) => m.id === model)?.supportsSessionResumption);
+}
+
+export function modelSupportsContextWindowCompression(model: LiveModelId): boolean {
+  return Boolean(LIVE_MODELS.find((m) => m.id === model)?.supportsContextWindowCompression);
 }
 
 export const LIVE_VOICE = 'Puck';
@@ -82,27 +96,26 @@ export function buildSessionSetupMessage(
     generationConfig.thinkingConfig = { thinkingLevel };
   }
 
-  // Session resumption: if a handle from a previous session is provided, Gemini
-  // will restore that session's context. Otherwise {} enables resumption for
-  // this session so the server starts issuing resumption handles we can save.
-  const sessionResumption = resumptionHandle ? { handle: resumptionHandle } : {};
-
-  return {
-    setup: {
-      model: `models/${model}`,
-      generationConfig,
-      tools: webSearchEnabled ? [{ googleSearch: {} }] : undefined,
-      systemInstruction: {
-        parts: [{ text: systemInstruction }],
-      },
-      inputAudioTranscription: {},
-      outputAudioTranscription: {},
-      sessionResumption,
-      // Sliding-window compression lifts the 15-minute audio-session cap and
-      // keeps connections alive on long dialogues.
-      contextWindowCompression: {
-        slidingWindow: {},
-      },
+  const setup: Record<string, unknown> = {
+    model: `models/${model}`,
+    generationConfig,
+    tools: webSearchEnabled ? [{ googleSearch: {} }] : undefined,
+    systemInstruction: {
+      parts: [{ text: systemInstruction }],
     },
+    inputAudioTranscription: {},
+    outputAudioTranscription: {},
   };
+
+  // Session resumption / context-window compression are not supported by
+  // every Live model (e.g. 2.5 native audio closes the WS immediately when
+  // they're present). Only include them when the selected model supports them.
+  if (modelSupportsSessionResumption(model)) {
+    setup.sessionResumption = resumptionHandle ? { handle: resumptionHandle } : {};
+  }
+  if (modelSupportsContextWindowCompression(model)) {
+    setup.contextWindowCompression = { slidingWindow: {} };
+  }
+
+  return { setup };
 }
