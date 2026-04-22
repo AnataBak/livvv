@@ -1214,6 +1214,15 @@ export function LiveConsole() {
                   />
                   <button
                     type="button"
+                    className="floating-camera-flip"
+                    onClick={() => void switchCamera()}
+                    aria-label="Перевернуть камеру"
+                    title={cameraFacingMode === 'user' ? 'Переключить на основную' : 'Переключить на фронтальную'}
+                  >
+                    ↺
+                  </button>
+                  <button
+                    type="button"
                     className="floating-camera-close"
                     onClick={stopCamera}
                     aria-label="Выключить камеру"

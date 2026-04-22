@@ -595,6 +595,29 @@ input {
   display: block;
 }
 
+.floating-camera-flip {
+  position: absolute;
+  top: 6px;
+  left: 8px;
+  width: 32px;
+  height: 32px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.6);
+  color: #fff;
+  font-size: 1.1rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.floating-camera-flip:hover,
+.floating-camera-flip:active {
+  background: rgba(0, 0, 0, 0.9);
+}
+
 .floating-camera-close {
   position: absolute;
   top: 6px;
