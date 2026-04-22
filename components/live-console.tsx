@@ -57,6 +57,22 @@ const THINKING_LEVEL_LABELS: Record<LiveThinkingLevel, string> = {
   medium: 'Средние',
   high: 'Высокие',
 };
+// Gemini closes the WS with one of these strings when the stored resumption
+// handle is no longer usable (handles expire after ~24h and are also invalid
+// across models / quota resets). On any of them we want to drop the saved
+// handle so the next click on «Запустить сессию» starts a fresh dialogue.
+const STALE_HANDLE_REASON_PATTERNS = [
+  'session expired',
+  'invalid session handle',
+  'bidigeneratecontent session expired',
+];
+
+function isStaleHandleReason(reason: unknown): boolean {
+  if (typeof reason !== 'string') return false;
+  const lower = reason.toLowerCase();
+  return STALE_HANDLE_REASON_PATTERNS.some((pattern) => lower.includes(pattern));
+}
+
 const STATUS_LABELS: Record<'idle' | 'connecting' | 'active' | 'stopped' | 'error', string> = {
   idle: 'Ожидание',
   connecting: 'Подключение',
@@ -411,6 +427,17 @@ export function LiveConsole() {
     appendEvent('Промт сброшен к стандартному. Применится при следующем запуске сессии.');
   }, [appendEvent]);
 
+  const dropStoredResumptionHandle = useCallback(() => {
+    resumptionHandleRef.current = null;
+    try {
+      window.localStorage.removeItem(RESUMPTION_HANDLE_STORAGE_KEY);
+      window.localStorage.removeItem(RESUMPTION_HANDLE_MODEL_STORAGE_KEY);
+    } catch {
+      // ignore
+    }
+    setHasResumptionHandle(false);
+  }, []);
+
   const clearSessionMemory = useCallback(() => {
     // Stop the active session first. Otherwise (a) Gemini keeps streaming new
     // resumption handles and immediately repopulates localStorage, and (b) the
@@ -420,17 +447,10 @@ export function LiveConsole() {
       teardownSession();
       setStatus('stopped');
     }
-    resumptionHandleRef.current = null;
-    try {
-      window.localStorage.removeItem(RESUMPTION_HANDLE_STORAGE_KEY);
-      window.localStorage.removeItem(RESUMPTION_HANDLE_MODEL_STORAGE_KEY);
-    } catch {
-      // ignore
-    }
-    setHasResumptionHandle(false);
+    dropStoredResumptionHandle();
     setMessages([]);
     appendEvent('Память диалога очищена. Запустите сессию заново — диалог начнётся с нуля.');
-  }, [appendEvent, teardownSession]);
+  }, [appendEvent, dropStoredResumptionHandle, teardownSession]);
 
   useEffect(() => {
     const trimmedKey = apiKeyInput.trim();
@@ -548,6 +568,12 @@ export function LiveConsole() {
               onClose: (reason) => {
                 setStatus('stopped');
                 appendEvent(`Сессия закрыта: ${reason}`);
+                if (isStaleHandleReason(reason) && resumptionHandleRef.current) {
+                  dropStoredResumptionHandle();
+                  appendEvent(
+                    'Сохранённый handle диалога протух. Он очищен — нажми «Запустить сессию» ещё раз, диалог начнётся с нуля.',
+                  );
+                }
               },
               onEvent: (event) => {
                 void handleLiveEvent(event);
@@ -592,6 +618,12 @@ export function LiveConsole() {
               onClose: (reason) => {
                 setStatus('stopped');
                 appendEvent(`Сессия закрыта: ${reason}`);
+                if (isStaleHandleReason(reason) && resumptionHandleRef.current) {
+                  dropStoredResumptionHandle();
+                  appendEvent(
+                    'Сохранённый handle диалога протух. Он очищен — нажми «Запустить сессию» ещё раз, диалог начнётся с нуля.',
+                  );
+                }
               },
               onEvent: (event) => {
                 void handleLiveEvent(event);
