@@ -127,6 +127,7 @@ export function LiveConsole() {
   const [isMicEnabled, setIsMicEnabled] = useState(false);
   const [isCameraEnabled, setIsCameraEnabled] = useState(false);
   const [isCameraFloating, setIsCameraFloating] = useState(false);
+  const [cameraStreamVersion, setCameraStreamVersion] = useState(0);
   const [cameraFacingMode, setCameraFacingMode] = useState<'user' | 'environment'>('environment');
   const [sessionExpiry, setSessionExpiry] = useState<string | null>(null);
   const [authMode, setAuthMode] = useState<AuthMode>('server-token');
@@ -256,6 +257,7 @@ export function LiveConsole() {
 
     const newMode = cameraRef.current.getCurrentFacingMode();
     setCameraFacingMode(newMode);
+    setCameraStreamVersion((v) => v + 1);
     appendEvent(`Камера переключена на ${newMode === 'user' ? 'фронтальную' : 'основную'}.`);
   }, [appendEvent]);
 
@@ -494,7 +496,7 @@ export function LiveConsole() {
         floating.srcObject = null;
       }
     }
-  }, [isCameraEnabled, isCameraFloating]);
+  }, [isCameraEnabled, isCameraFloating, cameraStreamVersion]);
 
   const savePromptPreset = useCallback(() => {
     const name = newPresetName.trim();
@@ -630,6 +632,7 @@ export function LiveConsole() {
 
     setIsCameraEnabled(true);
     setIsCameraFloating(true);
+    setCameraStreamVersion((v) => v + 1);
     appendEvent(`Камера включена (${cameraFacingMode === 'user' ? 'фронтальная' : 'основная'}).`);
   }, [appendEvent, cameraFacingMode]);
 
