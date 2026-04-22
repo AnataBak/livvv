@@ -125,6 +125,7 @@ export function LiveConsole() {
   const [apiKeyInput, setApiKeyInput] = useState('');
   const [isMicEnabled, setIsMicEnabled] = useState(false);
   const [isCameraEnabled, setIsCameraEnabled] = useState(false);
+  const [isCameraFloating, setIsCameraFloating] = useState(false);
   const [cameraFacingMode, setCameraFacingMode] = useState<'user' | 'environment'>('environment');
   const [sessionExpiry, setSessionExpiry] = useState<string | null>(null);
   const [authMode, setAuthMode] = useState<AuthMode>('server-token');
@@ -235,6 +236,7 @@ export function LiveConsole() {
   const stopCamera = useCallback(() => {
     cameraRef.current?.stop(videoRef.current);
     setIsCameraEnabled(false);
+    setIsCameraFloating(false);
   }, []);
 
   const switchCamera = useCallback(async () => {
@@ -601,8 +603,9 @@ export function LiveConsole() {
     }, cameraFacingMode);
 
     setIsCameraEnabled(true);
+    setIsCameraFloating(true);
     appendEvent(`Камера включена (${cameraFacingMode === 'user' ? 'фронтальная' : 'основная'}).`);
-  }, [appendEvent]);
+  }, [appendEvent, cameraFacingMode]);
 
   const startSession = useCallback(
     async (options?: { resetConversation?: boolean }) => {
@@ -1150,9 +1153,50 @@ export function LiveConsole() {
             <h3>Предпросмотр</h3>
           </div>
 
-          <div className="preview-frame">
+          <div
+            className={`preview-frame${
+              isCameraEnabled && isCameraFloating ? ' preview-frame--floating' : ''
+            }`}
+          >
             {isCameraEnabled ? null : <span className="preview-placeholder">Камера выключена</span>}
-            <video ref={videoRef} autoPlay muted playsInline className={isCameraEnabled ? 'video-active' : 'video-idle'} />
+            <video
+              ref={videoRef}
+              autoPlay
+              muted
+              playsInline
+              className={isCameraEnabled ? 'video-active' : 'video-idle'}
+            />
+            {isCameraEnabled && isCameraFloating ? (
+              <>
+                <button
+                  type="button"
+                  className="preview-close"
+                  onClick={stopCamera}
+                  aria-label="Выключить камеру"
+                  title="Выключить камеру"
+                >
+                  ×
+                </button>
+                <button
+                  type="button"
+                  className="preview-minimize"
+                  onClick={() => setIsCameraFloating(false)}
+                  title="Свернуть — камера продолжит работать"
+                >
+                  Свернуть
+                </button>
+              </>
+            ) : null}
+            {isCameraEnabled && !isCameraFloating ? (
+              <button
+                type="button"
+                className="preview-expand"
+                onClick={() => setIsCameraFloating(true)}
+                title="Развернуть обратно в плавающее окно"
+              >
+                Развернуть
+              </button>
+            ) : null}
           </div>
         </div>
 
