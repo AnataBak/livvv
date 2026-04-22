@@ -32,10 +32,13 @@ export async function GET(request: NextRequest) {
 
 // HTTP-based proxy using polling
 export async function POST(request: NextRequest) {
-  const { action, sessionId, message, token, webSearchEnabled, thinkingLevel, resumptionHandle } = await request.json();
+  const { action, sessionId, message, token, webSearchEnabled, thinkingLevel, resumptionHandle, systemInstruction } = await request.json();
   const safeThinkingLevel = isLiveThinkingLevel(thinkingLevel) ? thinkingLevel : undefined;
   const safeResumptionHandle = typeof resumptionHandle === 'string' && resumptionHandle.length > 0
     ? resumptionHandle
+    : undefined;
+  const safeSystemInstruction = typeof systemInstruction === 'string' && systemInstruction.trim().length > 0
+    ? systemInstruction
     : undefined;
 
   try {
@@ -72,6 +75,7 @@ export async function POST(request: NextRequest) {
                   Boolean(webSearchEnabled),
                   safeThinkingLevel,
                   safeResumptionHandle,
+                  safeSystemInstruction,
                 ),
               ),
             );

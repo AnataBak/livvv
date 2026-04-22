@@ -11,6 +11,7 @@ import {
   LIVE_THINKING_LEVELS,
   LIVE_THINKING_LEVEL_DEFAULT,
   LIVE_WEB_SEARCH_ENABLED,
+  SYSTEM_INSTRUCTION,
   isLiveThinkingLevel,
   type LiveThinkingLevel,
 } from '@/lib/live-session-config';
@@ -43,6 +44,7 @@ const VOICE_STORAGE_KEY = 'gemini-live-voice';
 const WEB_SEARCH_STORAGE_KEY = 'gemini-live-web-search';
 const THINKING_LEVEL_STORAGE_KEY = 'gemini-live-thinking-level';
 const RESUMPTION_HANDLE_STORAGE_KEY = 'gemini-live-session-handle';
+const SYSTEM_INSTRUCTION_STORAGE_KEY = 'gemini-live-system-instruction';
 const THINKING_LEVEL_LABELS: Record<LiveThinkingLevel, string> = {
   minimal: 'Минимальные (по умолчанию)',
   low: 'Низкие',
@@ -74,6 +76,7 @@ export function LiveConsole() {
   const [voice, setVoice] = useState<string>('Puck');
   const [webSearchEnabled, setWebSearchEnabled] = useState<boolean>(LIVE_WEB_SEARCH_ENABLED);
   const [thinkingLevel, setThinkingLevel] = useState<LiveThinkingLevel>(LIVE_THINKING_LEVEL_DEFAULT);
+  const [systemInstruction, setSystemInstruction] = useState<string>(SYSTEM_INSTRUCTION);
   const [hasResumptionHandle, setHasResumptionHandle] = useState<boolean>(false);
   const resumptionHandleRef = useRef<string | null>(null);
 
@@ -324,6 +327,26 @@ export function LiveConsole() {
     }
   }, []);
 
+  useEffect(() => {
+    const savedInstruction = window.localStorage.getItem(SYSTEM_INSTRUCTION_STORAGE_KEY);
+    if (savedInstruction !== null) {
+      setSystemInstruction(savedInstruction);
+    }
+  }, []);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(SYSTEM_INSTRUCTION_STORAGE_KEY, systemInstruction);
+    } catch {
+      // localStorage may be full or disabled; ignore — in-memory state still works.
+    }
+  }, [systemInstruction]);
+
+  const resetSystemInstruction = useCallback(() => {
+    setSystemInstruction(SYSTEM_INSTRUCTION);
+    appendEvent('Промт сброшен к стандартному. Применится при следующем запуске сессии.');
+  }, [appendEvent]);
+
   const clearSessionMemory = useCallback(() => {
     // Stop the active session first. Otherwise (a) Gemini keeps streaming new
     // resumption handles and immediately repopulates localStorage, and (b) the
@@ -475,6 +498,7 @@ export function LiveConsole() {
             webSearchEnabled,
             thinkingLevel,
             resumptionHandleRef.current ?? undefined,
+            systemInstruction.trim().length > 0 ? systemInstruction : undefined,
           );
         } else {
           setAuthMode('server-token');
@@ -513,6 +537,7 @@ export function LiveConsole() {
             webSearchEnabled,
             thinkingLevel,
             resumptionHandleRef.current ?? undefined,
+            systemInstruction.trim().length > 0 ? systemInstruction : undefined,
           );
         }
 
@@ -536,7 +561,7 @@ export function LiveConsole() {
         setIsBusy(false);
       }
     },
-    [apiKeyInput, appendEvent, fetchEphemeralToken, handleLiveEvent, startMicrophone, teardownSession, temperature, voice, webSearchEnabled, thinkingLevel],
+    [apiKeyInput, appendEvent, fetchEphemeralToken, handleLiveEvent, startMicrophone, teardownSession, temperature, voice, webSearchEnabled, thinkingLevel, systemInstruction],
   );
 
   const stopConversation = useCallback(() => {
@@ -790,6 +815,30 @@ export function LiveConsole() {
             <p className="thinking-note">
               По умолчанию «минимальные» — самая низкая задержка. Применяется при следующем запуске сессии.
             </p>
+          </div>
+          <div className="system-instruction-section">
+            <label htmlFor="system-instruction">Промт модели (роль и правила):</label>
+            <textarea
+              id="system-instruction"
+              className="system-instruction-textarea"
+              value={systemInstruction}
+              onChange={(event) => setSystemInstruction(event.target.value)}
+              rows={8}
+              placeholder="Например: ты коуч по английскому, всегда отвечай только по-английски..."
+            />
+            <div className="system-instruction-actions">
+              <button
+                type="button"
+                className="secondary-button"
+                onClick={resetSystemInstruction}
+                disabled={systemInstruction === SYSTEM_INSTRUCTION}
+              >
+                Сбросить к стандартному
+              </button>
+              <p className="system-instruction-note">
+                Сохраняется в браузере. Применится при следующем запуске сессии.
+              </p>
+            </div>
           </div>
           <div className="memory-section">
             <label>Память диалога:</label>

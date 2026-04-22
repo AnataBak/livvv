@@ -158,7 +158,8 @@ input {
 .temperature-section,
 .voice-section,
 .search-section,
-.memory-section {
+.memory-section,
+.system-instruction-section {
   display: flex;
   flex-direction: column;
 }
@@ -166,9 +167,46 @@ input {
 .temperature-section label,
 .voice-section label,
 .search-section label,
-.memory-section > label {
+.memory-section > label,
+.system-instruction-section > label {
   font-weight: 700;
   margin-bottom: 0.5rem;
+}
+
+.system-instruction-section {
+  padding: 0.9rem 1rem;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: var(--panel-strong);
+  gap: 0.6rem;
+}
+
+.system-instruction-textarea {
+  width: 100%;
+  padding: 0.6rem 0.7rem;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel);
+  color: var(--text);
+  font-size: 0.95rem;
+  font-family: inherit;
+  line-height: 1.45;
+  resize: vertical;
+  min-height: 6rem;
+}
+
+.system-instruction-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+  flex-wrap: wrap;
+}
+
+.system-instruction-note {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.85rem;
+  line-height: 1.4;
 }
 
 .memory-section {
