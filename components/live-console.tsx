@@ -5,6 +5,7 @@ import { createPortal } from 'react-dom';
 import { BrowserAudioPlayer } from '@/lib/client/browser-audio-player';
 import { CameraStreamer } from '@/lib/client/camera-streamer';
 import { GeminiLiveClient } from '@/lib/client/gemini-live-client';
+import { ScreenStreamer, isScreenShareSupported } from '@/lib/client/screen-streamer';
 import { MicrophoneRecorder } from '@/lib/client/microphone-recorder';
 import type { LiveServerEvent } from '@/lib/client/live-message-parser';
 import {
@@ -134,6 +135,8 @@ export function LiveConsole() {
   const [isCameraFloating, setIsCameraFloating] = useState(false);
   const [cameraStreamVersion, setCameraStreamVersion] = useState(0);
   const [cameraFacingMode, setCameraFacingMode] = useState<'user' | 'environment'>('environment');
+  const [isScreenSharing, setIsScreenSharing] = useState(false);
+  const [canShareScreen, setCanShareScreen] = useState(false);
   const [sessionExpiry, setSessionExpiry] = useState<string | null>(null);
   const [authMode, setAuthMode] = useState<AuthMode>('server-token');
   const [isBusy, setIsBusy] = useState(false);
@@ -163,6 +166,7 @@ export function LiveConsole() {
   const audioPlayerRef = useRef<BrowserAudioPlayer | null>(null);
   const microphoneRef = useRef<MicrophoneRecorder | null>(null);
   const cameraRef = useRef<CameraStreamer | null>(null);
+  const screenRef = useRef<ScreenStreamer | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const floatingVideoRef = useRef<HTMLVideoElement | null>(null);
   const pendingMessageIdsRef = useRef<{ user: string | null; assistant: string | null }>({
@@ -253,6 +257,12 @@ export function LiveConsole() {
     setIsCameraFloating(false);
   }, []);
 
+  const stopScreenShare = useCallback(() => {
+    screenRef.current?.stop(videoRef.current);
+    setIsScreenSharing(false);
+    setIsCameraFloating(false);
+  }, []);
+
   const switchCamera = useCallback(async () => {
     if (!clientRef.current) {
       throw new Error('Сначала запустите сессию, а потом переключайте камеру.');
@@ -275,13 +285,14 @@ export function LiveConsole() {
   const teardownSession = useCallback(() => {
     stopMicrophone();
     stopCamera();
+    stopScreenShare();
     clientRef.current?.close();
     clientRef.current = null;
     setSessionExpiry(null);
     audioPlayerRef.current?.interrupt();
     finalizePendingMessage('assistant');
     finalizePendingMessage('user');
-  }, [finalizePendingMessage, stopCamera, stopMicrophone]);
+  }, [finalizePendingMessage, stopCamera, stopMicrophone, stopScreenShare]);
 
   const handleLiveEvent = useCallback(
     async (event: LiveServerEvent) => {
@@ -512,13 +523,14 @@ export function LiveConsole() {
   const [isPortalReady, setIsPortalReady] = useState(false);
   useEffect(() => {
     setIsPortalReady(true);
+    setCanShareScreen(isScreenShareSupported());
   }, []);
 
   useEffect(() => {
     const primary = videoRef.current;
     const floating = floatingVideoRef.current;
     if (!primary || !floating) return;
-    if (isCameraEnabled && isCameraFloating) {
+    if ((isCameraEnabled || isScreenSharing) && isCameraFloating) {
       if (floating.srcObject !== primary.srcObject) {
         floating.srcObject = primary.srcObject;
         floating.muted = true;
@@ -531,7 +543,7 @@ export function LiveConsole() {
         floating.srcObject = null;
       }
     }
-  }, [isCameraEnabled, isCameraFloating, cameraStreamVersion]);
+  }, [isCameraEnabled, isScreenSharing, isCameraFloating, cameraStreamVersion]);
 
   const savePromptPreset = useCallback(() => {
     const name = newPresetName.trim();
@@ -661,6 +673,11 @@ export function LiveConsole() {
       throw new Error('Не найден элемент предпросмотра камеры.');
     }
 
+    if (screenRef.current) {
+      screenRef.current.stop(videoRef.current);
+      setIsScreenSharing(false);
+    }
+
     if (!cameraRef.current) {
       cameraRef.current = new CameraStreamer();
     }
@@ -674,6 +691,61 @@ export function LiveConsole() {
     setCameraStreamVersion((v) => v + 1);
     appendEvent(`Камера включена (${cameraFacingMode === 'user' ? 'фронтальная' : 'основная'}).`);
   }, [appendEvent, cameraFacingMode]);
+
+  const startScreenShare = useCallback(async () => {
+    if (!clientRef.current) {
+      throw new Error('Сначала запустите сессию, а потом включайте демонстрацию экрана.');
+    }
+
+    if (!videoRef.current) {
+      throw new Error('Не найден элемент предпросмотра.');
+    }
+
+    if (cameraRef.current) {
+      cameraRef.current.stop(videoRef.current);
+      setIsCameraEnabled(false);
+    }
+
+    if (!screenRef.current) {
+      screenRef.current = new ScreenStreamer();
+    }
+
+    await screenRef.current.start(
+      videoRef.current,
+      (frame, mimeType) => {
+        clientRef.current?.sendVideo(frame, mimeType);
+      },
+      () => {
+        // User clicked the browser's built-in "Stop sharing" button.
+        screenRef.current?.stop(videoRef.current);
+        setIsScreenSharing(false);
+        setIsCameraFloating(false);
+        appendEvent('Демонстрация экрана остановлена из браузера.');
+      },
+    );
+
+    setIsScreenSharing(true);
+    setIsCameraFloating(true);
+    setCameraStreamVersion((v) => v + 1);
+    appendEvent('Демонстрация экрана включена.');
+  }, [appendEvent]);
+
+  const handleToggleScreenShare = useCallback(async () => {
+    setError(null);
+    try {
+      if (isScreenSharing) {
+        stopScreenShare();
+        appendEvent('Демонстрация экрана выключена.');
+        return;
+      }
+      await startScreenShare();
+    } catch (toggleError) {
+      const message =
+        toggleError instanceof Error ? toggleError.message : 'Не удалось переключить демонстрацию экрана.';
+      setError(message);
+      appendEvent(message);
+    }
+  }, [appendEvent, isScreenSharing, startScreenShare, stopScreenShare]);
 
   const startSession = useCallback(
     async (options?: { resetConversation?: boolean }) => {
@@ -1023,6 +1095,17 @@ export function LiveConsole() {
           <button className="toggle-button" onClick={() => void handleToggleCamera()} disabled={!isSessionActive}>
             {isCameraEnabled ? 'Камера включена' : 'Камера выключена'}
           </button>
+          {canShareScreen ? (
+            <button
+              className={`icon-button screen-share-button${isScreenSharing ? ' screen-share-button--on' : ''}`}
+              onClick={() => void handleToggleScreenShare()}
+              disabled={!isSessionActive}
+              aria-label={isScreenSharing ? 'Выключить демонстрацию экрана' : 'Включить демонстрацию экрана'}
+              title={isScreenSharing ? 'Выключить демонстрацию экрана' : 'Включить демонстрацию экрана'}
+            >
+              🖥️
+            </button>
+          ) : null}
           <button className="toggle-button" onClick={() => void handleToggleMicrophone()} disabled={!isSessionActive}>
             {isMicEnabled ? 'Микрофон включен' : 'Микрофон выключен'}
           </button>
@@ -1251,15 +1334,15 @@ export function LiveConsole() {
           </div>
 
           <div className="preview-frame">
-            {isCameraEnabled ? null : <span className="preview-placeholder">Камера выключена</span>}
+            {isCameraEnabled || isScreenSharing ? null : <span className="preview-placeholder">Камера выключена</span>}
             <video
               ref={videoRef}
               autoPlay
               muted
               playsInline
-              className={isCameraEnabled ? 'video-active' : 'video-idle'}
+              className={isCameraEnabled || isScreenSharing ? 'video-active' : 'video-idle'}
             />
-            {isCameraEnabled && !isCameraFloating ? (
+            {(isCameraEnabled || isScreenSharing) && !isCameraFloating ? (
               <button
                 type="button"
                 className="preview-expand"
@@ -1270,9 +1353,13 @@ export function LiveConsole() {
               </button>
             ) : null}
           </div>
-          {isPortalReady && isCameraEnabled && isCameraFloating
+          {isPortalReady && (isCameraEnabled || isScreenSharing) && isCameraFloating
             ? createPortal(
-                <div className="floating-camera" role="dialog" aria-label="Плавающее превью камеры">
+                <div
+                  className="floating-camera"
+                  role="dialog"
+                  aria-label={isScreenSharing ? 'Плавающее превью демонстрации экрана' : 'Плавающее превью камеры'}
+                >
                   <video
                     ref={floatingVideoRef}
                     autoPlay
@@ -1280,21 +1367,23 @@ export function LiveConsole() {
                     playsInline
                     className="floating-camera-video"
                   />
-                  <button
-                    type="button"
-                    className="floating-camera-flip"
-                    onClick={() => void switchCamera()}
-                    aria-label="Перевернуть камеру"
-                    title={cameraFacingMode === 'user' ? 'Переключить на основную' : 'Переключить на фронтальную'}
-                  >
-                    ↺
-                  </button>
+                  {isCameraEnabled ? (
+                    <button
+                      type="button"
+                      className="floating-camera-flip"
+                      onClick={() => void switchCamera()}
+                      aria-label="Перевернуть камеру"
+                      title={cameraFacingMode === 'user' ? 'Переключить на основную' : 'Переключить на фронтальную'}
+                    >
+                      ↺
+                    </button>
+                  ) : null}
                   <button
                     type="button"
                     className="floating-camera-close"
-                    onClick={stopCamera}
-                    aria-label="Выключить камеру"
-                    title="Выключить камеру"
+                    onClick={isScreenSharing ? stopScreenShare : stopCamera}
+                    aria-label={isScreenSharing ? 'Выключить демонстрацию экрана' : 'Выключить камеру'}
+                    title={isScreenSharing ? 'Выключить демонстрацию экрана' : 'Выключить камеру'}
                   >
                     ×
                   </button>
@@ -1302,7 +1391,7 @@ export function LiveConsole() {
                     type="button"
                     className="floating-camera-minimize"
                     onClick={() => setIsCameraFloating(false)}
-                    title="Свернуть — камера продолжит работать"
+                    title={isScreenSharing ? 'Свернуть — демонстрация продолжит идти' : 'Свернуть — камера продолжит работать'}
                   >
                     Свернуть
                   </button>
