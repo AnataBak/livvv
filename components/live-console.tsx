@@ -148,6 +148,7 @@ export function LiveConsole() {
   const [model, setModel] = useState<LiveModelId>(LIVE_MODEL_DEFAULT);
   const [hasResumptionHandle, setHasResumptionHandle] = useState<boolean>(false);
   const [memoryEnabled, setMemoryEnabled] = useState<boolean>(true);
+  const [isSettingsOpen, setIsSettingsOpen] = useState<boolean>(false);
   const thinkingLevelSupported = modelSupportsThinkingLevel(model);
   const resumptionHandleRef = useRef<string | null>(null);
   const modelRef = useRef<LiveModelId>(model);
@@ -894,101 +895,51 @@ export function LiveConsole() {
   }, [teardownSession]);
 
   const isSessionActive = status === 'active';
-  const effectiveAuthLabel = authMode === 'tab-api-key' ? 'API-ключ браузера' : 'Серверный токен';
 
   return (
     <section className="console-shell">
       <div className="console-panel status-panel">
-        <div className="status-grid">
+        <div className="status-grid status-grid--single">
           <div className="status-card">
             <span className="status-label">Состояние</span>
             <strong data-state={status}>{STATUS_LABELS[status]}</strong>
           </div>
-          <div className="status-card">
-            <span className="status-label">Авторизация</span>
-            <strong>{effectiveAuthLabel}</strong>
-          </div>
-          <div className="status-card status-card--model">
-            <span className="status-label">Модель</span>
-            <select
-              className="status-model-select"
-              value={model}
-              disabled={status === 'connecting' || status === 'active'}
-              onChange={(event) => {
-                const next = event.target.value;
-                if (isLiveModelId(next)) {
-                  setModel(next);
-                }
-              }}
-              title="Выбор модели Gemini Live. Применится при следующем запуске сессии."
-            >
-              {LIVE_MODELS.map((m) => (
-                <option key={m.id} value={m.id}>
-                  {m.label}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div className="status-card">
-            <span className="status-label">Сессия истекает</span>
-            <strong>
-              {authMode === 'tab-api-key'
-                ? 'Управляется вашим API-ключом'
-                : sessionExpiry
-                  ? new Date(sessionExpiry).toLocaleTimeString()
-                  : 'Ещё не запущена'}
-            </strong>
-          </div>
         </div>
 
+        <div className="preset-loader-row">
+          <select
+            className="prompt-presets-select preset-loader-select"
+            value=""
+            onChange={(event) => {
+              const name = event.target.value;
+              if (!name) return;
+              const preset = promptPresets.find((p) => p.name === name);
+              if (preset) loadPromptPreset(preset);
+              event.target.value = '';
+            }}
+            disabled={promptPresets.length === 0}
+            aria-label="Загрузить пресет промта"
+          >
+            <option value="">
+              {promptPresets.length === 0
+                ? 'Нет сохранённых пресетов промта'
+                : `Загрузить пресет промта (${promptPresets.length})…`}
+            </option>
+            {promptPresets.map((preset) => (
+              <option key={preset.name} value={preset.name}>
+                {preset.name}
+              </option>
+            ))}
+          </select>
+        </div>
 
-
-        <div className="controls-row">
+        <div className="controls-row controls-row--primary">
           <button className="primary-button" onClick={() => void startSession()} disabled={isBusy}>
             Запустить сессию
           </button>
           <button className="secondary-button" onClick={stopConversation} disabled={!clientRef.current}>
             Остановить
           </button>
-          <button
-            type="button"
-            className={`secondary-button memory-toggle${memoryEnabled ? ' memory-toggle--on' : ''}`}
-            onClick={() => setMemoryEnabled((v) => !v)}
-            disabled={!modelSupportsSessionResumption(model)}
-            title={
-              !modelSupportsSessionResumption(model)
-                ? 'У Gemini 2.5 (native audio) память между сессиями не поддерживается.'
-                : memoryEnabled
-                  ? 'Сейчас ВКЛ — следующая сессия продолжит прошлый диалог. Нажми, чтобы выключить.'
-                  : 'Сейчас ВЫКЛ — каждая сессия стартует с чистого листа. Сохранённый прошлый диалог не тронут и вернётся, когда снова включишь.'
-            }
-          >
-            {memoryEnabled ? 'Память: вкл ✅' : 'Память: выкл'}
-          </button>
-        </div>
-
-        <div className="api-key-panel">
-          <label className="api-key-label" htmlFor="gemini-api-key">
-            Одноразовый API-ключ для этого браузера
-          </label>
-          <div className="api-key-row">
-            <input
-              id="gemini-api-key"
-              type="password"
-              value={apiKeyInput}
-              onChange={(event) => setApiKeyInput(event.target.value)}
-              placeholder="Вставьте API-ключ Gemini, чтобы не использовать переменные Vercel"
-              autoComplete="off"
-              spellCheck={false}
-            />
-            <button className="secondary-button" onClick={handleClearApiKey} disabled={!apiKeyInput}>
-              Очистить ключ
-            </button>
-          </div>
-          <p className="api-key-note">
-            Если поле заполнено, приложение подключается напрямую из браузера и хранит ключ только в этом
-            браузере.
-          </p>
         </div>
 
         <div className="camera-controls-row">
@@ -1016,231 +967,71 @@ export function LiveConsole() {
           </label>
         </div>
 
-        <div className="controls-row">
-          <button className="primary-button" onClick={() => void startSession()} disabled={isBusy}>
-            Запустить сессию
+        <div className="icon-row" role="toolbar" aria-label="Быстрые действия">
+          <button
+            type="button"
+            className={`icon-button${isCameraEnabled ? ' icon-button--on' : ''}`}
+            onClick={() => void handleToggleCamera()}
+            disabled={!isSessionActive}
+            aria-label={isCameraEnabled ? 'Выключить камеру' : 'Включить камеру'}
+            title={isCameraEnabled ? 'Камера включена' : 'Камера выключена'}
+          >
+            <span aria-hidden="true">📷</span>
           </button>
-          <button className="toggle-button" onClick={() => void handleToggleCamera()} disabled={!isSessionActive}>
-            {isCameraEnabled ? 'Камера включена' : 'Камера выключена'}
+          <button
+            type="button"
+            className={`icon-button${isMicEnabled ? ' icon-button--on' : ''}`}
+            onClick={() => void handleToggleMicrophone()}
+            disabled={!isSessionActive}
+            aria-label={isMicEnabled ? 'Выключить микрофон' : 'Включить микрофон'}
+            title={isMicEnabled ? 'Микрофон включен' : 'Микрофон выключен'}
+          >
+            <span aria-hidden="true">🎤</span>
           </button>
-          <button className="toggle-button" onClick={() => void handleToggleMicrophone()} disabled={!isSessionActive}>
-            {isMicEnabled ? 'Микрофон включен' : 'Микрофон выключен'}
+          <button
+            type="button"
+            className={`icon-button icon-button--memory${memoryEnabled ? ' icon-button--on' : ''}`}
+            onClick={() => setMemoryEnabled((v) => !v)}
+            disabled={!modelSupportsSessionResumption(model)}
+            aria-label={memoryEnabled ? 'Выключить память диалога' : 'Включить память диалога'}
+            title={
+              !modelSupportsSessionResumption(model)
+                ? 'У Gemini 2.5 (native audio) память между сессиями не поддерживается.'
+                : memoryEnabled
+                  ? 'Память: вкл. Следующая сессия продолжит прошлый диалог.'
+                  : 'Память: выкл. Каждая сессия стартует с чистого листа.'
+            }
+          >
+            <span aria-hidden="true" className="icon-stack">
+              🧠
+              <span className={`icon-badge${memoryEnabled ? ' icon-badge--on' : ' icon-badge--off'}`}>
+                {memoryEnabled ? '✓' : '×'}
+              </span>
+            </span>
           </button>
-          <button className="toggle-button" onClick={() => void switchCamera()} disabled={!isCameraEnabled}>
-            {cameraFacingMode === 'user' ? 'Фронтальная' : 'Основная'}
+          <button
+            type="button"
+            className="icon-button"
+            onClick={clearSessionMemory}
+            disabled={!hasResumptionHandle}
+            aria-label="Очистить память диалога"
+            title={hasResumptionHandle ? 'Очистить память диалога' : 'Очищать пока нечего — память пуста'}
+          >
+            <span aria-hidden="true">🧹</span>
+          </button>
+        </div>
+
+        <div className="settings-trigger-row">
+          <button
+            type="button"
+            className="secondary-button settings-trigger"
+            onClick={() => setIsSettingsOpen(true)}
+          >
+            ⚙️ Настройки и промт
           </button>
         </div>
 
         {error ? <p className="error-banner">{error}</p> : null}
-      </div>
-
-      <div className="settings-panel">
-        <div>
-          <p className="eyebrow">Настройки</p>
-          <h3>Температура и голос</h3>
-        </div>
-        <div className="settings-controls">
-          <div className="temperature-section">
-            <label htmlFor="temperature-slider">Температура: {temperature.toFixed(1)}</label>
-            <input
-              id="temperature-slider"
-              type="range"
-              min="0"
-              max="2"
-              step="0.1"
-              value={temperature}
-              onChange={(e) => setTemperature(parseFloat(e.target.value))}
-            />
-            <div className="temperature-labels">
-              <span>0.0 (Предсказуемо)</span>
-              <span>2.0 (Творчески)</span>
-            </div>
-          </div>
-          <div className="voice-section">
-            <label htmlFor="voice-select">Голос:</label>
-            <select
-              id="voice-select"
-              value={voice}
-              onChange={(e) => setVoice(e.target.value)}
-            >
-              {LIVE_VOICES.map((v) => (
-                <option key={v.id} value={v.id}>
-                  {`${v.id} — ${v.style} (${v.gender})`}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div className="voice-section">
-            <label htmlFor="language-select">Язык:</label>
-            <select
-              id="language-select"
-              value={language}
-              onChange={(e) => setLanguage(e.target.value)}
-              disabled={!modelSupportsThinkingLevel(model)}
-            >
-              {LIVE_LANGUAGES.map((l) => (
-                <option key={l.code || 'auto'} value={l.code}>
-                  {l.label}
-                </option>
-              ))}
-            </select>
-            <p className="thinking-note">
-              {modelSupportsThinkingLevel(model)
-                ? 'Применяется при следующем запуске сессии. «Авто» — модель определяет язык по твоей речи.'
-                : 'У Gemini 2.5 (native audio) язык выбирается автоматически — явный выбор недоступен.'}
-            </p>
-          </div>
-          <div className="thinking-section" data-disabled={!thinkingLevelSupported}>
-            <label htmlFor="thinking-level-select">Размышления модели:</label>
-            <select
-              id="thinking-level-select"
-              value={thinkingLevel}
-              disabled={!thinkingLevelSupported}
-              onChange={(event) => {
-                const next = event.target.value;
-                if (isLiveThinkingLevel(next)) {
-                  setThinkingLevel(next);
-                }
-              }}
-            >
-              {LIVE_THINKING_LEVELS.map((level) => (
-                <option key={level} value={level}>
-                  {THINKING_LEVEL_LABELS[level]}
-                </option>
-              ))}
-            </select>
-            <p className="thinking-note">
-              {thinkingLevelSupported
-                ? 'По умолчанию «минимальные» — самая низкая задержка. Применяется при следующем запуске сессии.'
-                : 'Недоступно для выбранной модели (Gemini 2.5 Live). Смените модель, чтобы управлять размышлениями.'}
-            </p>
-          </div>
-          <div className="system-instruction-section">
-            <label htmlFor="system-instruction">Промт модели (роль и правила):</label>
-            <textarea
-              id="system-instruction"
-              className="system-instruction-textarea"
-              value={systemInstruction}
-              onChange={(event) => setSystemInstruction(event.target.value)}
-              rows={8}
-              placeholder="Например: ты коуч по английскому, всегда отвечай только по-английски..."
-            />
-            <div className="system-instruction-actions">
-              <button
-                type="button"
-                className="secondary-button"
-                onClick={resetSystemInstruction}
-                disabled={systemInstruction === SYSTEM_INSTRUCTION}
-              >
-                Сбросить к стандартному
-              </button>
-              <p className="system-instruction-note">
-                Сохраняется в браузере. Применится при следующем запуске сессии.
-              </p>
-            </div>
-            <div className="prompt-presets">
-              <div className="prompt-presets-header">Пресеты промта:</div>
-              <div className="prompt-presets-select-row">
-                <select
-                  className="prompt-presets-select"
-                  value=""
-                  onChange={(event) => {
-                    const name = event.target.value;
-                    if (!name) return;
-                    const preset = promptPresets.find((p) => p.name === name);
-                    if (preset) loadPromptPreset(preset);
-                    event.target.value = '';
-                  }}
-                  disabled={promptPresets.length === 0}
-                >
-                  <option value="">
-                    {promptPresets.length === 0
-                      ? 'Нет сохранённых пресетов'
-                      : `Загрузить пресет (${promptPresets.length})…`}
-                  </option>
-                  {promptPresets.map((preset) => (
-                    <option key={preset.name} value={preset.name}>
-                      {preset.name}
-                    </option>
-                  ))}
-                </select>
-                <select
-                  className="prompt-presets-select prompt-presets-delete-select"
-                  value=""
-                  onChange={(event) => {
-                    const name = event.target.value;
-                    if (!name) return;
-                    deletePromptPreset(name);
-                    event.target.value = '';
-                  }}
-                  disabled={promptPresets.length === 0}
-                  aria-label="Удалить пресет"
-                  title="Удалить пресет"
-                >
-                  <option value="">Удалить…</option>
-                  {promptPresets.map((preset) => (
-                    <option key={preset.name} value={preset.name}>
-                      {preset.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div className="prompt-presets-save">
-                <input
-                  type="text"
-                  className="prompt-preset-name-input"
-                  placeholder="Имя пресета (например: режиссёр)"
-                  value={newPresetName}
-                  onChange={(event) => setNewPresetName(event.target.value)}
-                  onKeyDown={(event) => {
-                    if (event.key === 'Enter') {
-                      event.preventDefault();
-                      savePromptPreset();
-                    }
-                  }}
-                />
-                <button
-                  type="button"
-                  className="secondary-button"
-                  onClick={savePromptPreset}
-                  disabled={newPresetName.trim().length === 0}
-                >
-                  Сохранить текущий как пресет
-                </button>
-              </div>
-            </div>
-          </div>
-          <div className="memory-section">
-            <label>Память диалога:</label>
-            <p className="memory-status">
-              {hasResumptionHandle
-                ? 'Есть сохранённый диалог — при запуске модель продолжит с того места, где остановились.'
-                : 'Памяти пока нет. После первой сессии модель сможет продолжать диалог между запусками.'}
-            </p>
-            <button
-              type="button"
-              className="secondary-button"
-              onClick={clearSessionMemory}
-              disabled={!hasResumptionHandle}
-            >
-              Очистить память диалога
-            </button>
-          </div>
-          <div className="search-section">
-            <label className="search-toggle" htmlFor="web-search-toggle">
-              <input
-                id="web-search-toggle"
-                type="checkbox"
-                checked={webSearchEnabled}
-                onChange={(event) => setWebSearchEnabled(event.target.checked)}
-              />
-              <span>Поиск в интернете</span>
-            </label>
-            <p className="search-note">
-              По умолчанию выключен. Включите, если хотите дать Gemini доступ к Google Search для актуальной информации.
-            </p>
-          </div>
-        </div>
       </div>
 
       <div className="console-grid">
@@ -1374,6 +1165,353 @@ export function LiveConsole() {
           ))}
         </ul>
       </div>
+
+      {isPortalReady && !isSettingsOpen
+        ? createPortal(
+            <div className="sticky-controls" role="toolbar" aria-label="Быстрые действия">
+              <button
+                type="button"
+                className={`icon-button icon-button--mini${isCameraEnabled ? ' icon-button--on' : ''}`}
+                onClick={() => void handleToggleCamera()}
+                disabled={!isSessionActive}
+                aria-label={isCameraEnabled ? 'Выключить камеру' : 'Включить камеру'}
+                title={isCameraEnabled ? 'Камера включена' : 'Камера выключена'}
+              >
+                <span aria-hidden="true">📷</span>
+              </button>
+              <button
+                type="button"
+                className={`icon-button icon-button--mini${isMicEnabled ? ' icon-button--on' : ''}`}
+                onClick={() => void handleToggleMicrophone()}
+                disabled={!isSessionActive}
+                aria-label={isMicEnabled ? 'Выключить микрофон' : 'Включить микрофон'}
+                title={isMicEnabled ? 'Микрофон включен' : 'Микрофон выключен'}
+              >
+                <span aria-hidden="true">🎤</span>
+              </button>
+              <button
+                type="button"
+                className={`icon-button icon-button--mini icon-button--memory${memoryEnabled ? ' icon-button--on' : ''}`}
+                onClick={() => setMemoryEnabled((v) => !v)}
+                disabled={!modelSupportsSessionResumption(model)}
+                aria-label={memoryEnabled ? 'Выключить память диалога' : 'Включить память диалога'}
+                title={
+                  !modelSupportsSessionResumption(model)
+                    ? 'У Gemini 2.5 память между сессиями не поддерживается.'
+                    : memoryEnabled
+                      ? 'Память: вкл'
+                      : 'Память: выкл'
+                }
+              >
+                <span aria-hidden="true" className="icon-stack">
+                  🧠
+                  <span className={`icon-badge${memoryEnabled ? ' icon-badge--on' : ' icon-badge--off'}`}>
+                    {memoryEnabled ? '✓' : '×'}
+                  </span>
+                </span>
+              </button>
+              <button
+                type="button"
+                className="icon-button icon-button--mini"
+                onClick={clearSessionMemory}
+                disabled={!hasResumptionHandle}
+                aria-label="Очистить память диалога"
+                title={hasResumptionHandle ? 'Очистить память диалога' : 'Память уже пуста'}
+              >
+                <span aria-hidden="true">🧹</span>
+              </button>
+            </div>,
+            document.body,
+          )
+        : null}
+
+      {isPortalReady && isSettingsOpen
+        ? createPortal(
+            <div
+              className="settings-drawer-backdrop"
+              role="presentation"
+              onClick={() => setIsSettingsOpen(false)}
+            >
+              <div
+                className="settings-drawer"
+                role="dialog"
+                aria-modal="true"
+                aria-label="Настройки и промт"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <header className="settings-drawer-header">
+                  <h3>Настройки</h3>
+                  <button
+                    type="button"
+                    className="settings-drawer-close"
+                    onClick={() => setIsSettingsOpen(false)}
+                    aria-label="Закрыть"
+                  >
+                    ×
+                  </button>
+                </header>
+                <div className="settings-drawer-body">
+                  <details className="settings-section">
+                    <summary>
+                      Промт модели <span className="settings-summary-hint">(роль и правила)</span>
+                    </summary>
+                    <div className="settings-section-content">
+                      <textarea
+                        id="system-instruction"
+                        className="system-instruction-textarea"
+                        value={systemInstruction}
+                        onChange={(event) => setSystemInstruction(event.target.value)}
+                        rows={8}
+                        placeholder="Например: ты коуч по английскому, всегда отвечай только по-английски..."
+                      />
+                      <div className="system-instruction-actions">
+                        <button
+                          type="button"
+                          className="secondary-button"
+                          onClick={resetSystemInstruction}
+                          disabled={systemInstruction === SYSTEM_INSTRUCTION}
+                        >
+                          Сбросить к стандартному
+                        </button>
+                        <p className="system-instruction-note">
+                          Сохраняется в браузере. Применится при следующем запуске сессии.
+                        </p>
+                      </div>
+                      <div className="prompt-presets">
+                        <div className="prompt-presets-header">Пресеты промта:</div>
+                        <div className="prompt-presets-select-row">
+                          <select
+                            className="prompt-presets-select"
+                            value=""
+                            onChange={(event) => {
+                              const name = event.target.value;
+                              if (!name) return;
+                              const preset = promptPresets.find((p) => p.name === name);
+                              if (preset) loadPromptPreset(preset);
+                              event.target.value = '';
+                            }}
+                            disabled={promptPresets.length === 0}
+                          >
+                            <option value="">
+                              {promptPresets.length === 0
+                                ? 'Нет сохранённых пресетов'
+                                : `Загрузить пресет (${promptPresets.length})…`}
+                            </option>
+                            {promptPresets.map((preset) => (
+                              <option key={preset.name} value={preset.name}>
+                                {preset.name}
+                              </option>
+                            ))}
+                          </select>
+                          <select
+                            className="prompt-presets-select prompt-presets-delete-select"
+                            value=""
+                            onChange={(event) => {
+                              const name = event.target.value;
+                              if (!name) return;
+                              deletePromptPreset(name);
+                              event.target.value = '';
+                            }}
+                            disabled={promptPresets.length === 0}
+                            aria-label="Удалить пресет"
+                            title="Удалить пресет"
+                          >
+                            <option value="">Удалить…</option>
+                            {promptPresets.map((preset) => (
+                              <option key={preset.name} value={preset.name}>
+                                {preset.name}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                        <div className="prompt-presets-save">
+                          <input
+                            type="text"
+                            className="prompt-preset-name-input"
+                            placeholder="Имя пресета (например: режиссёр)"
+                            value={newPresetName}
+                            onChange={(event) => setNewPresetName(event.target.value)}
+                            onKeyDown={(event) => {
+                              if (event.key === 'Enter') {
+                                event.preventDefault();
+                                savePromptPreset();
+                              }
+                            }}
+                          />
+                          <button
+                            type="button"
+                            className="secondary-button"
+                            onClick={savePromptPreset}
+                            disabled={newPresetName.trim().length === 0}
+                          >
+                            Сохранить как пресет
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </details>
+
+                  <details className="settings-section">
+                    <summary>
+                      Настройки модели <span className="settings-summary-hint">(модель, голос, язык, и т.д.)</span>
+                    </summary>
+                    <div className="settings-section-content settings-section-content--grid">
+                      <div className="voice-section">
+                        <label htmlFor="model-select">Модель Gemini Live:</label>
+                        <select
+                          id="model-select"
+                          value={model}
+                          disabled={status === 'connecting' || status === 'active'}
+                          onChange={(event) => {
+                            const next = event.target.value;
+                            if (isLiveModelId(next)) {
+                              setModel(next);
+                            }
+                          }}
+                          title="Выбор модели Gemini Live. Применится при следующем запуске сессии."
+                        >
+                          {LIVE_MODELS.map((m) => (
+                            <option key={m.id} value={m.id}>
+                              {m.label}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <div className="temperature-section">
+                        <label htmlFor="temperature-slider">Температура: {temperature.toFixed(1)}</label>
+                        <input
+                          id="temperature-slider"
+                          type="range"
+                          min="0"
+                          max="2"
+                          step="0.1"
+                          value={temperature}
+                          onChange={(e) => setTemperature(parseFloat(e.target.value))}
+                        />
+                        <div className="temperature-labels">
+                          <span>0.0 (Предсказуемо)</span>
+                          <span>2.0 (Творчески)</span>
+                        </div>
+                      </div>
+                      <div className="voice-section">
+                        <label htmlFor="voice-select">Голос:</label>
+                        <select
+                          id="voice-select"
+                          value={voice}
+                          onChange={(e) => setVoice(e.target.value)}
+                        >
+                          {LIVE_VOICES.map((v) => (
+                            <option key={v.id} value={v.id}>
+                              {`${v.id} — ${v.style} (${v.gender})`}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <div className="voice-section">
+                        <label htmlFor="language-select">Язык:</label>
+                        <select
+                          id="language-select"
+                          value={language}
+                          onChange={(e) => setLanguage(e.target.value)}
+                          disabled={!modelSupportsThinkingLevel(model)}
+                        >
+                          {LIVE_LANGUAGES.map((l) => (
+                            <option key={l.code || 'auto'} value={l.code}>
+                              {l.label}
+                            </option>
+                          ))}
+                        </select>
+                        <p className="thinking-note">
+                          {modelSupportsThinkingLevel(model)
+                            ? 'Применяется при следующем запуске сессии. «Авто» — модель определяет язык по твоей речи.'
+                            : 'У Gemini 2.5 (native audio) язык выбирается автоматически — явный выбор недоступен.'}
+                        </p>
+                      </div>
+                      <div className="thinking-section" data-disabled={!thinkingLevelSupported}>
+                        <label htmlFor="thinking-level-select">Размышления модели:</label>
+                        <select
+                          id="thinking-level-select"
+                          value={thinkingLevel}
+                          disabled={!thinkingLevelSupported}
+                          onChange={(event) => {
+                            const next = event.target.value;
+                            if (isLiveThinkingLevel(next)) {
+                              setThinkingLevel(next);
+                            }
+                          }}
+                        >
+                          {LIVE_THINKING_LEVELS.map((level) => (
+                            <option key={level} value={level}>
+                              {THINKING_LEVEL_LABELS[level]}
+                            </option>
+                          ))}
+                        </select>
+                        <p className="thinking-note">
+                          {thinkingLevelSupported
+                            ? 'По умолчанию «минимальные» — самая низкая задержка. Применяется при следующем запуске сессии.'
+                            : 'Недоступно для выбранной модели (Gemini 2.5 Live).'}
+                        </p>
+                      </div>
+                      <div className="search-section">
+                        <label className="search-toggle" htmlFor="web-search-toggle">
+                          <input
+                            id="web-search-toggle"
+                            type="checkbox"
+                            checked={webSearchEnabled}
+                            onChange={(event) => setWebSearchEnabled(event.target.checked)}
+                          />
+                          <span>Поиск в интернете</span>
+                        </label>
+                        <p className="search-note">
+                          По умолчанию выключен. Включите, если хотите дать Gemini доступ к Google Search.
+                        </p>
+                      </div>
+                      <div className="memory-section">
+                        <label>Память диалога (запасная очистка):</label>
+                        <p className="memory-status">
+                          {hasResumptionHandle
+                            ? 'Есть сохранённый диалог — при запуске модель продолжит с того места.'
+                            : 'Памяти пока нет.'}
+                        </p>
+                        <button
+                          type="button"
+                          className="secondary-button"
+                          onClick={clearSessionMemory}
+                          disabled={!hasResumptionHandle}
+                        >
+                          Очистить память диалога
+                        </button>
+                      </div>
+                      <div className="api-key-panel">
+                        <label className="api-key-label" htmlFor="gemini-api-key">
+                          Свой API-ключ для этого браузера
+                        </label>
+                        <div className="api-key-row">
+                          <input
+                            id="gemini-api-key"
+                            type="password"
+                            value={apiKeyInput}
+                            onChange={(event) => setApiKeyInput(event.target.value)}
+                            placeholder="Вставьте API-ключ Gemini, чтобы не использовать переменные Vercel"
+                            autoComplete="off"
+                            spellCheck={false}
+                          />
+                          <button className="secondary-button" onClick={handleClearApiKey} disabled={!apiKeyInput}>
+                            Очистить ключ
+                          </button>
+                        </div>
+                        <p className="api-key-note">
+                          Если поле заполнено, приложение подключается напрямую из браузера и хранит ключ только в этом браузере.
+                        </p>
+                      </div>
+                    </div>
+                  </details>
+                </div>
+              </div>
+            </div>,
+            document.body,
+          )
+        : null}
     </section>
   );
 }
