@@ -903,24 +903,17 @@ export function LiveConsole() {
       return;
     }
 
-    const scrollY = window.scrollY;
-    const { style } = document.body;
-    const previousOverflow = style.overflow;
-    const previousPosition = style.position;
-    const previousTop = style.top;
-    const previousWidth = style.width;
+    const bodyStyle = document.body.style;
+    const htmlStyle = document.documentElement.style;
+    const previousBodyOverflow = bodyStyle.overflow;
+    const previousHtmlOverflow = htmlStyle.overflow;
 
-    style.overflow = 'hidden';
-    style.position = 'fixed';
-    style.top = `-${scrollY}px`;
-    style.width = '100%';
+    bodyStyle.overflow = 'hidden';
+    htmlStyle.overflow = 'hidden';
 
     return () => {
-      style.overflow = previousOverflow;
-      style.position = previousPosition;
-      style.top = previousTop;
-      style.width = previousWidth;
-      window.scrollTo(0, scrollY);
+      bodyStyle.overflow = previousBodyOverflow;
+      htmlStyle.overflow = previousHtmlOverflow;
     };
   }, [isSettingsOpen]);
 
@@ -1266,20 +1259,29 @@ export function LiveConsole() {
                   </button>
                 </header>
                 <div className="settings-drawer-body">
-                  <section className="settings-section" data-open={activeSettingsSection === 'prompt'}>
+                  <div className="settings-tabs" role="tablist" aria-label="Разделы настроек">
                     <button
                       type="button"
-                      className="settings-section-toggle"
+                      className={`settings-tab${activeSettingsSection === 'prompt' ? ' settings-tab--active' : ''}`}
                       onClick={() => setActiveSettingsSection('prompt')}
-                      aria-expanded={activeSettingsSection === 'prompt'}
+                      role="tab"
+                      aria-selected={activeSettingsSection === 'prompt'}
                     >
-                      <span>
-                        Промт модели <span className="settings-summary-hint">(роль и правила)</span>
-                      </span>
-                      <span className="settings-section-chevron" aria-hidden="true">▾</span>
+                      Промт модели
                     </button>
+                    <button
+                      type="button"
+                      className={`settings-tab${activeSettingsSection === 'model' ? ' settings-tab--active' : ''}`}
+                      onClick={() => setActiveSettingsSection('model')}
+                      role="tab"
+                      aria-selected={activeSettingsSection === 'model'}
+                    >
+                      Настройки модели
+                    </button>
+                  </div>
+                  <div className="settings-tab-panel">
                     {activeSettingsSection === 'prompt' ? (
-                      <div className="settings-section-content">
+                      <div className="settings-panel-content">
                       <textarea
                         id="system-instruction"
                         className="system-instruction-textarea"
@@ -1372,24 +1374,11 @@ export function LiveConsole() {
                           </button>
                         </div>
                       </div>
-                    </div>
+                      </div>
                     ) : null}
-                  </section>
 
-                  <section className="settings-section" data-open={activeSettingsSection === 'model'}>
-                    <button
-                      type="button"
-                      className="settings-section-toggle"
-                      onClick={() => setActiveSettingsSection('model')}
-                      aria-expanded={activeSettingsSection === 'model'}
-                    >
-                      <span>
-                        Настройки модели <span className="settings-summary-hint">(модель, голос, язык, и т.д.)</span>
-                      </span>
-                      <span className="settings-section-chevron" aria-hidden="true">▾</span>
-                    </button>
                     {activeSettingsSection === 'model' ? (
-                      <div className="settings-section-content settings-section-content--grid">
+                      <div className="settings-panel-content settings-panel-content--grid">
                       <div className="voice-section">
                         <label htmlFor="model-select">Модель Gemini Live:</label>
                         <select
@@ -1538,11 +1527,11 @@ export function LiveConsole() {
                           Если поле заполнено, приложение подключается напрямую из браузера и хранит ключ только в этом браузере.
                         </p>
                       </div>
-                    </div>
+                      </div>
                     ) : null}
-                  </section>
                 </div>
               </div>
+            </div>
             </div>,
             document.body,
           )
