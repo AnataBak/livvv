@@ -58,6 +58,8 @@ const SYSTEM_INSTRUCTION_STORAGE_KEY = 'gemini-live-system-instruction';
 const SYSTEM_INSTRUCTION_PRESETS_STORAGE_KEY = 'gemini-live-system-instruction-presets';
 const MODEL_STORAGE_KEY = 'gemini-live-model';
 const MEMORY_ENABLED_STORAGE_KEY = 'gemini-live-memory-enabled';
+const STANDARD_PROMPT_PRESET_VALUE = '__standard__';
+const CUSTOM_PROMPT_PRESET_VALUE = '__custom__';
 
 type SystemInstructionPreset = { name: string; text: string };
 
@@ -575,6 +577,27 @@ export function LiveConsole() {
     [appendEvent],
   );
 
+  const currentPromptPreset = promptPresets.find((preset) => preset.text === systemInstruction) ?? null;
+  const currentPromptPresetValue =
+    systemInstruction === SYSTEM_INSTRUCTION
+      ? STANDARD_PROMPT_PRESET_VALUE
+      : currentPromptPreset?.name ?? CUSTOM_PROMPT_PRESET_VALUE;
+
+  const applySelectedPromptPreset = useCallback(
+    (value: string) => {
+      if (value === STANDARD_PROMPT_PRESET_VALUE) {
+        resetSystemInstruction();
+        return;
+      }
+
+      const preset = promptPresets.find((item) => item.name === value);
+      if (preset) {
+        loadPromptPreset(preset);
+      }
+    },
+    [loadPromptPreset, promptPresets, resetSystemInstruction],
+  );
+
   const dropStoredResumptionHandle = useCallback(() => {
     resumptionHandleRef.current = null;
     try {
@@ -930,22 +953,16 @@ export function LiveConsole() {
         <div className="preset-loader-row">
           <select
             className="prompt-presets-select preset-loader-select"
-            value=""
+            value={currentPromptPresetValue}
             onChange={(event) => {
-              const name = event.target.value;
-              if (!name) return;
-              const preset = promptPresets.find((p) => p.name === name);
-              if (preset) loadPromptPreset(preset);
-              event.target.value = '';
+              applySelectedPromptPreset(event.target.value);
             }}
-            disabled={promptPresets.length === 0}
             aria-label="Загрузить пресет промта"
           >
-            <option value="">
-              {promptPresets.length === 0
-                ? 'Нет сохранённых пресетов промта'
-                : `Загрузить пресет промта (${promptPresets.length})…`}
-            </option>
+            <option value={STANDARD_PROMPT_PRESET_VALUE}>Стандартный</option>
+            {currentPromptPresetValue === CUSTOM_PROMPT_PRESET_VALUE ? (
+              <option value={CUSTOM_PROMPT_PRESET_VALUE}>Текущий промт</option>
+            ) : null}
             {promptPresets.map((preset) => (
               <option key={preset.name} value={preset.name}>
                 {preset.name}
@@ -1308,21 +1325,15 @@ export function LiveConsole() {
                         <div className="prompt-presets-select-row">
                           <select
                             className="prompt-presets-select"
-                            value=""
+                            value={currentPromptPresetValue}
                             onChange={(event) => {
-                              const name = event.target.value;
-                              if (!name) return;
-                              const preset = promptPresets.find((p) => p.name === name);
-                              if (preset) loadPromptPreset(preset);
-                              event.target.value = '';
+                              applySelectedPromptPreset(event.target.value);
                             }}
-                            disabled={promptPresets.length === 0}
                           >
-                            <option value="">
-                              {promptPresets.length === 0
-                                ? 'Нет сохранённых пресетов'
-                                : `Загрузить пресет (${promptPresets.length})…`}
-                            </option>
+                            <option value={STANDARD_PROMPT_PRESET_VALUE}>Стандартный</option>
+                            {currentPromptPresetValue === CUSTOM_PROMPT_PRESET_VALUE ? (
+                              <option value={CUSTOM_PROMPT_PRESET_VALUE}>Текущий промт</option>
+                            ) : null}
                             {promptPresets.map((preset) => (
                               <option key={preset.name} value={preset.name}>
                                 {preset.name}
