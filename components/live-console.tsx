@@ -895,6 +895,33 @@ export function LiveConsole() {
   }, [teardownSession]);
 
   const isSessionActive = status === 'active';
+  const isSessionRunning = status === 'connecting' || status === 'active';
+
+  useEffect(() => {
+    if (!isSettingsOpen) {
+      return;
+    }
+
+    const scrollY = window.scrollY;
+    const { style } = document.body;
+    const previousOverflow = style.overflow;
+    const previousPosition = style.position;
+    const previousTop = style.top;
+    const previousWidth = style.width;
+
+    style.overflow = 'hidden';
+    style.position = 'fixed';
+    style.top = `-${scrollY}px`;
+    style.width = '100%';
+
+    return () => {
+      style.overflow = previousOverflow;
+      style.position = previousPosition;
+      style.top = previousTop;
+      style.width = previousWidth;
+      window.scrollTo(0, scrollY);
+    };
+  }, [isSettingsOpen]);
 
   return (
     <section className="console-shell">
@@ -1169,15 +1196,23 @@ export function LiveConsole() {
       {isPortalReady && !isSettingsOpen
         ? createPortal(
             <div className="sticky-controls" role="toolbar" aria-label="Быстрые действия">
+              <span
+                className={`icon-button icon-button--mini icon-button--status${isSessionActive ? ' icon-button--status-active' : ' icon-button--status-inactive'}`}
+                role="status"
+                aria-label={`Состояние сессии: ${STATUS_LABELS[status]}`}
+                title={`Состояние сессии: ${STATUS_LABELS[status]}`}
+              >
+                <span aria-hidden="true">{isSessionActive ? '✓' : '✕'}</span>
+              </span>
               <button
                 type="button"
-                className={`icon-button icon-button--mini${isCameraEnabled ? ' icon-button--on' : ''}`}
-                onClick={() => void handleToggleCamera()}
-                disabled={!isSessionActive}
-                aria-label={isCameraEnabled ? 'Выключить камеру' : 'Включить камеру'}
-                title={isCameraEnabled ? 'Камера включена' : 'Камера выключена'}
+                className={`icon-button icon-button--mini${isSessionRunning ? ' icon-button--on' : ''}`}
+                onClick={isSessionRunning ? stopConversation : () => void startSession()}
+                disabled={isBusy}
+                aria-label={isSessionRunning ? 'Остановить сессию' : 'Запустить сессию'}
+                title={isSessionRunning ? 'Остановить сессию' : 'Запустить сессию'}
               >
-                <span aria-hidden="true">📷</span>
+                <span aria-hidden="true">{isSessionRunning ? '⏸' : '▶'}</span>
               </button>
               <button
                 type="button"
@@ -1191,34 +1226,13 @@ export function LiveConsole() {
               </button>
               <button
                 type="button"
-                className={`icon-button icon-button--mini icon-button--memory${memoryEnabled ? ' icon-button--on' : ''}`}
-                onClick={() => setMemoryEnabled((v) => !v)}
-                disabled={!modelSupportsSessionResumption(model)}
-                aria-label={memoryEnabled ? 'Выключить память диалога' : 'Включить память диалога'}
-                title={
-                  !modelSupportsSessionResumption(model)
-                    ? 'У Gemini 2.5 память между сессиями не поддерживается.'
-                    : memoryEnabled
-                      ? 'Память: вкл'
-                      : 'Память: выкл'
-                }
+                className={`icon-button icon-button--mini${isCameraEnabled ? ' icon-button--on' : ''}`}
+                onClick={() => void handleToggleCamera()}
+                disabled={!isSessionActive}
+                aria-label={isCameraEnabled ? 'Выключить камеру' : 'Включить камеру'}
+                title={isCameraEnabled ? 'Камера включена' : 'Камера выключена'}
               >
-                <span aria-hidden="true" className="icon-stack">
-                  🧠
-                  <span className={`icon-badge${memoryEnabled ? ' icon-badge--on' : ' icon-badge--off'}`}>
-                    {memoryEnabled ? '✓' : '×'}
-                  </span>
-                </span>
-              </button>
-              <button
-                type="button"
-                className="icon-button icon-button--mini"
-                onClick={clearSessionMemory}
-                disabled={!hasResumptionHandle}
-                aria-label="Очистить память диалога"
-                title={hasResumptionHandle ? 'Очистить память диалога' : 'Память уже пуста'}
-              >
-                <span aria-hidden="true">🧹</span>
+                <span aria-hidden="true">📷</span>
               </button>
             </div>,
             document.body,
