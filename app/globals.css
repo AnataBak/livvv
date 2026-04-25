@@ -286,15 +286,17 @@ input {
   display: flex;
   justify-content: center;
   align-items: flex-end;
+  padding: max(0.5rem, env(safe-area-inset-top, 0px)) 0 0;
   animation: settings-fade 160ms ease;
   overscroll-behavior: contain;
-  touch-action: none;
+  overflow: hidden;
 }
 
 .settings-drawer {
   width: 100%;
   max-width: 720px;
-  max-height: 92vh;
+  height: min(92dvh, calc(100dvh - max(0.5rem, env(safe-area-inset-top, 0px))));
+  min-height: 0;
   background: var(--panel-strong);
   border-radius: 28px 28px 0 0;
   box-shadow: 0 -20px 60px rgba(20, 28, 25, 0.35);
@@ -302,17 +304,19 @@ input {
   flex-direction: column;
   overflow: hidden;
   animation: settings-slide-up 220ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  overscroll-behavior: contain;
   touch-action: pan-y;
 }
 
 @media (min-width: 861px) {
   .settings-drawer-backdrop {
     align-items: center;
+    padding: 1rem;
   }
 
   .settings-drawer {
     border-radius: 24px;
-    max-height: 86vh;
+    height: min(86dvh, 860px);
   }
 }
 
@@ -326,6 +330,15 @@ input {
   to { transform: translateY(0); opacity: 1; }
 }
 
+.settings-drawer-grabber {
+  width: 3rem;
+  height: 0.3rem;
+  margin: 0.65rem auto 0;
+  border-radius: 999px;
+  background: rgba(93, 107, 100, 0.32);
+  flex-shrink: 0;
+}
+
 .settings-drawer-header {
   display: flex;
   align-items: center;
@@ -333,6 +346,7 @@ input {
   padding: 0.85rem 1.1rem;
   border-bottom: 1px solid var(--line);
   background: var(--panel);
+  flex-shrink: 0;
 }
 
 .settings-drawer-header h3 {
@@ -359,8 +373,10 @@ input {
 
 .settings-drawer-body {
   flex: 1;
+  min-height: 0;
+  overflow-x: hidden;
   overflow-y: auto;
-  padding: 0.6rem 0.85rem 1.5rem;
+  padding: 0.6rem 0.85rem calc(1.5rem + env(safe-area-inset-bottom, 0px));
   display: flex;
   flex-direction: column;
   gap: 0.6rem;

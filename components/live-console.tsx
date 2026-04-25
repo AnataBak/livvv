@@ -1253,6 +1253,7 @@ export function LiveConsole() {
                 aria-label="Настройки и промт"
                 onClick={(e) => e.stopPropagation()}
               >
+                <div className="settings-drawer-grabber" aria-hidden="true" />
                 <header className="settings-drawer-header">
                   <h3>Настройки</h3>
                   <button
