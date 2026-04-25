@@ -149,6 +149,7 @@ export function LiveConsole() {
   const [hasResumptionHandle, setHasResumptionHandle] = useState<boolean>(false);
   const [memoryEnabled, setMemoryEnabled] = useState<boolean>(true);
   const [isSettingsOpen, setIsSettingsOpen] = useState<boolean>(false);
+  const [activeSettingsSection, setActiveSettingsSection] = useState<'prompt' | 'model'>('prompt');
   const thinkingLevelSupported = modelSupportsThinkingLevel(model);
   const resumptionHandleRef = useRef<string | null>(null);
   const modelRef = useRef<LiveModelId>(model);
@@ -1253,7 +1254,6 @@ export function LiveConsole() {
                 aria-label="Настройки и промт"
                 onClick={(e) => e.stopPropagation()}
               >
-                <div className="settings-drawer-grabber" aria-hidden="true" />
                 <header className="settings-drawer-header">
                   <h3>Настройки</h3>
                   <button
@@ -1266,11 +1266,20 @@ export function LiveConsole() {
                   </button>
                 </header>
                 <div className="settings-drawer-body">
-                  <details className="settings-section">
-                    <summary>
-                      Промт модели <span className="settings-summary-hint">(роль и правила)</span>
-                    </summary>
-                    <div className="settings-section-content">
+                  <section className="settings-section" data-open={activeSettingsSection === 'prompt'}>
+                    <button
+                      type="button"
+                      className="settings-section-toggle"
+                      onClick={() => setActiveSettingsSection('prompt')}
+                      aria-expanded={activeSettingsSection === 'prompt'}
+                    >
+                      <span>
+                        Промт модели <span className="settings-summary-hint">(роль и правила)</span>
+                      </span>
+                      <span className="settings-section-chevron" aria-hidden="true">▾</span>
+                    </button>
+                    {activeSettingsSection === 'prompt' ? (
+                      <div className="settings-section-content">
                       <textarea
                         id="system-instruction"
                         className="system-instruction-textarea"
@@ -1364,13 +1373,23 @@ export function LiveConsole() {
                         </div>
                       </div>
                     </div>
-                  </details>
+                    ) : null}
+                  </section>
 
-                  <details className="settings-section">
-                    <summary>
-                      Настройки модели <span className="settings-summary-hint">(модель, голос, язык, и т.д.)</span>
-                    </summary>
-                    <div className="settings-section-content settings-section-content--grid">
+                  <section className="settings-section" data-open={activeSettingsSection === 'model'}>
+                    <button
+                      type="button"
+                      className="settings-section-toggle"
+                      onClick={() => setActiveSettingsSection('model')}
+                      aria-expanded={activeSettingsSection === 'model'}
+                    >
+                      <span>
+                        Настройки модели <span className="settings-summary-hint">(модель, голос, язык, и т.д.)</span>
+                      </span>
+                      <span className="settings-section-chevron" aria-hidden="true">▾</span>
+                    </button>
+                    {activeSettingsSection === 'model' ? (
+                      <div className="settings-section-content settings-section-content--grid">
                       <div className="voice-section">
                         <label htmlFor="model-select">Модель Gemini Live:</label>
                         <select
@@ -1520,7 +1539,8 @@ export function LiveConsole() {
                         </p>
                       </div>
                     </div>
-                  </details>
+                    ) : null}
+                  </section>
                 </div>
               </div>
             </div>,
