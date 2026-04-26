@@ -11,28 +11,29 @@ import { prepareImageAttachment, type PreparedImageAttachment } from '@/lib/clie
 import {
   IMAGE_ATTACHMENT_FORMAT_DEFAULT,
   IMAGE_ATTACHMENT_FORMATS,
-  IMAGE_ATTACHMENT_JPEG_QUALITIES,
   IMAGE_ATTACHMENT_JPEG_QUALITY_DEFAULT,
-  IMAGE_ATTACHMENT_MAX_DIMENSION_DEFAULT,
-  IMAGE_ATTACHMENT_MAX_DIMENSIONS,
+  IMAGE_ATTACHMENT_MAX_LONGEST_SIDE_DEFAULT,
+  IMAGE_ATTACHMENT_MAX_LONGEST_SIDE_MAX,
+  IMAGE_ATTACHMENT_MAX_LONGEST_SIDE_MIN,
+  IMAGE_ATTACHMENT_MAX_LONGEST_SIDE_STEP,
+  JPEG_QUALITY_MAX,
+  JPEG_QUALITY_MIN,
+  JPEG_QUALITY_STEP,
+  MAX_LONGEST_SIDE_NATIVE,
   SCREEN_FORMAT_DEFAULT,
   SCREEN_FORMATS,
-  SCREEN_JPEG_QUALITIES,
   SCREEN_JPEG_QUALITY_DEFAULT,
-  SCREEN_RESOLUTION_DEFAULT,
-  SCREEN_RESOLUTIONS,
+  SCREEN_MAX_LONGEST_SIDE_DEFAULT,
+  SCREEN_MAX_LONGEST_SIDE_MAX,
+  SCREEN_MAX_LONGEST_SIDE_MIN,
+  SCREEN_MAX_LONGEST_SIDE_STEP,
+  clampJpegQuality,
+  clampMaxLongestSide,
+  describeMaxLongestSide,
   isImageAttachmentFormat,
-  isImageAttachmentJpegQuality,
-  isImageAttachmentMaxDimension,
   isScreenFormat,
-  isScreenJpegQuality,
-  isScreenResolution,
   type ImageAttachmentFormat,
-  type ImageAttachmentJpegQuality,
-  type ImageAttachmentMaxDimension,
   type ScreenFormat,
-  type ScreenJpegQuality,
-  type ScreenResolution,
 } from '@/lib/live-session-config';
 import type { LiveServerEvent } from '@/lib/client/live-message-parser';
 import {
@@ -90,28 +91,14 @@ const MODEL_STORAGE_KEY = 'gemini-live-model';
 const MEMORY_ENABLED_STORAGE_KEY = 'gemini-live-memory-enabled';
 const SCREEN_FORMAT_STORAGE_KEY = 'gemini-live-screen-format';
 const SCREEN_JPEG_QUALITY_STORAGE_KEY = 'gemini-live-screen-jpeg-quality';
-const SCREEN_RESOLUTION_STORAGE_KEY = 'gemini-live-screen-resolution';
+const SCREEN_MAX_LONGEST_SIDE_STORAGE_KEY = 'gemini-live-screen-max-longest-side';
 const IMAGE_ATTACHMENT_FORMAT_STORAGE_KEY = 'gemini-live-image-attachment-format';
 const IMAGE_ATTACHMENT_JPEG_QUALITY_STORAGE_KEY = 'gemini-live-image-attachment-jpeg-quality';
-const IMAGE_ATTACHMENT_MAX_DIMENSION_STORAGE_KEY = 'gemini-live-image-attachment-max-dimension';
+const IMAGE_ATTACHMENT_MAX_LONGEST_SIDE_STORAGE_KEY = 'gemini-live-image-attachment-max-longest-side';
 
 const SCREEN_FORMAT_LABELS: Record<ScreenFormat, string> = {
   jpeg: 'JPEG (по умолчанию — легче по трафику)',
   png: 'PNG (без потерь, идеально для текста)',
-};
-
-const SCREEN_JPEG_QUALITY_LABELS: Record<string, string> = {
-  '0.5': '0.5 — низкое',
-  '0.7': '0.7 — среднее (по умолчанию)',
-  '0.85': '0.85 — высокое',
-  '0.95': '0.95 — максимальное',
-};
-
-const SCREEN_RESOLUTION_LABELS: Record<ScreenResolution, string> = {
-  hd: '1280×720 — HD (по умолчанию)',
-  'full-hd': '1920×1080 — Full HD',
-  '2k': '2560×1440 — 2K',
-  native: 'Родное (без сжатия)',
 };
 
 const IMAGE_ATTACHMENT_FORMAT_LABELS: Record<ImageAttachmentFormat, string> = {
@@ -119,20 +106,21 @@ const IMAGE_ATTACHMENT_FORMAT_LABELS: Record<ImageAttachmentFormat, string> = {
   png: 'PNG (без потерь)',
 };
 
-const IMAGE_ATTACHMENT_JPEG_QUALITY_LABELS: Record<string, string> = {
-  '0.5': '0.5 — низкое',
-  '0.7': '0.7 — среднее',
-  '0.85': '0.85 — высокое (по умолчанию)',
-  '0.95': '0.95 — максимальное',
-};
+/** Slider value for the «native» tick — one step beyond the numeric max. */
+const SCREEN_NATIVE_SLIDER_VALUE = SCREEN_MAX_LONGEST_SIDE_MAX + SCREEN_MAX_LONGEST_SIDE_STEP;
+const IMAGE_NATIVE_SLIDER_VALUE = IMAGE_ATTACHMENT_MAX_LONGEST_SIDE_MAX + IMAGE_ATTACHMENT_MAX_LONGEST_SIDE_STEP;
 
-const IMAGE_ATTACHMENT_MAX_DIMENSION_LABELS: Record<ImageAttachmentMaxDimension, string> = {
-  small: '640 px — экономно',
-  medium: '1280 px (по умолчанию)',
-  large: '1920 px — Full HD',
-  xl: '2560 px — 2K',
-  native: 'Родное (без сжатия)',
-};
+function maxLongestSideToSlider(value: number, nativeSliderValue: number): number {
+  return value === MAX_LONGEST_SIDE_NATIVE ? nativeSliderValue : value;
+}
+
+function sliderToMaxLongestSide(slider: number, nativeSliderValue: number): number {
+  return slider >= nativeSliderValue ? MAX_LONGEST_SIDE_NATIVE : slider;
+}
+
+function formatJpegQuality(value: number): string {
+  return value.toFixed(2);
+}
 const STANDARD_PROMPT_PRESET_VALUE = '__standard__';
 const CUSTOM_PROMPT_PRESET_VALUE = '__custom__';
 
@@ -216,11 +204,11 @@ export function LiveConsole() {
   const [pendingAttachment, setPendingAttachment] = useState<PreparedImageAttachment | null>(null);
   const [attachmentError, setAttachmentError] = useState<string | null>(null);
   const [screenFormat, setScreenFormat] = useState<ScreenFormat>(SCREEN_FORMAT_DEFAULT);
-  const [screenJpegQuality, setScreenJpegQuality] = useState<ScreenJpegQuality>(SCREEN_JPEG_QUALITY_DEFAULT);
-  const [screenResolution, setScreenResolution] = useState<ScreenResolution>(SCREEN_RESOLUTION_DEFAULT);
+  const [screenJpegQuality, setScreenJpegQuality] = useState<number>(SCREEN_JPEG_QUALITY_DEFAULT);
+  const [screenMaxLongestSide, setScreenMaxLongestSide] = useState<number>(SCREEN_MAX_LONGEST_SIDE_DEFAULT);
   const [imageAttachmentFormat, setImageAttachmentFormat] = useState<ImageAttachmentFormat>(IMAGE_ATTACHMENT_FORMAT_DEFAULT);
-  const [imageAttachmentJpegQuality, setImageAttachmentJpegQuality] = useState<ImageAttachmentJpegQuality>(IMAGE_ATTACHMENT_JPEG_QUALITY_DEFAULT);
-  const [imageAttachmentMaxDimension, setImageAttachmentMaxDimension] = useState<ImageAttachmentMaxDimension>(IMAGE_ATTACHMENT_MAX_DIMENSION_DEFAULT);
+  const [imageAttachmentJpegQuality, setImageAttachmentJpegQuality] = useState<number>(IMAGE_ATTACHMENT_JPEG_QUALITY_DEFAULT);
+  const [imageAttachmentMaxLongestSide, setImageAttachmentMaxLongestSide] = useState<number>(IMAGE_ATTACHMENT_MAX_LONGEST_SIDE_DEFAULT);
   const [sessionExpiry, setSessionExpiry] = useState<string | null>(null);
   const [authMode, setAuthMode] = useState<AuthMode>('server-token');
   const [isBusy, setIsBusy] = useState(false);
@@ -536,20 +524,32 @@ export function LiveConsole() {
 
   useEffect(() => {
     const saved = window.localStorage.getItem(SCREEN_JPEG_QUALITY_STORAGE_KEY);
-    const parsed = saved !== null ? parseFloat(saved) : NaN;
-    if (isScreenJpegQuality(parsed)) setScreenJpegQuality(parsed);
+    if (saved === null) return;
+    const parsed = parseFloat(saved);
+    if (Number.isFinite(parsed)) setScreenJpegQuality(clampJpegQuality(parsed));
   }, []);
   useEffect(() => {
     window.localStorage.setItem(SCREEN_JPEG_QUALITY_STORAGE_KEY, screenJpegQuality.toString());
   }, [screenJpegQuality]);
 
   useEffect(() => {
-    const saved = window.localStorage.getItem(SCREEN_RESOLUTION_STORAGE_KEY);
-    if (isScreenResolution(saved)) setScreenResolution(saved);
+    const saved = window.localStorage.getItem(SCREEN_MAX_LONGEST_SIDE_STORAGE_KEY);
+    if (saved === null) return;
+    const parsed = parseInt(saved, 10);
+    if (Number.isFinite(parsed)) {
+      setScreenMaxLongestSide(
+        clampMaxLongestSide(
+          parsed,
+          SCREEN_MAX_LONGEST_SIDE_MIN,
+          SCREEN_MAX_LONGEST_SIDE_MAX,
+          SCREEN_MAX_LONGEST_SIDE_STEP,
+        ),
+      );
+    }
   }, []);
   useEffect(() => {
-    window.localStorage.setItem(SCREEN_RESOLUTION_STORAGE_KEY, screenResolution);
-  }, [screenResolution]);
+    window.localStorage.setItem(SCREEN_MAX_LONGEST_SIDE_STORAGE_KEY, screenMaxLongestSide.toString());
+  }, [screenMaxLongestSide]);
 
   useEffect(() => {
     const saved = window.localStorage.getItem(IMAGE_ATTACHMENT_FORMAT_STORAGE_KEY);
@@ -561,8 +561,9 @@ export function LiveConsole() {
 
   useEffect(() => {
     const saved = window.localStorage.getItem(IMAGE_ATTACHMENT_JPEG_QUALITY_STORAGE_KEY);
-    const parsed = saved !== null ? parseFloat(saved) : NaN;
-    if (isImageAttachmentJpegQuality(parsed)) setImageAttachmentJpegQuality(parsed);
+    if (saved === null) return;
+    const parsed = parseFloat(saved);
+    if (Number.isFinite(parsed)) setImageAttachmentJpegQuality(clampJpegQuality(parsed));
   }, []);
   useEffect(() => {
     window.localStorage.setItem(
@@ -572,12 +573,26 @@ export function LiveConsole() {
   }, [imageAttachmentJpegQuality]);
 
   useEffect(() => {
-    const saved = window.localStorage.getItem(IMAGE_ATTACHMENT_MAX_DIMENSION_STORAGE_KEY);
-    if (isImageAttachmentMaxDimension(saved)) setImageAttachmentMaxDimension(saved);
+    const saved = window.localStorage.getItem(IMAGE_ATTACHMENT_MAX_LONGEST_SIDE_STORAGE_KEY);
+    if (saved === null) return;
+    const parsed = parseInt(saved, 10);
+    if (Number.isFinite(parsed)) {
+      setImageAttachmentMaxLongestSide(
+        clampMaxLongestSide(
+          parsed,
+          IMAGE_ATTACHMENT_MAX_LONGEST_SIDE_MIN,
+          IMAGE_ATTACHMENT_MAX_LONGEST_SIDE_MAX,
+          IMAGE_ATTACHMENT_MAX_LONGEST_SIDE_STEP,
+        ),
+      );
+    }
   }, []);
   useEffect(() => {
-    window.localStorage.setItem(IMAGE_ATTACHMENT_MAX_DIMENSION_STORAGE_KEY, imageAttachmentMaxDimension);
-  }, [imageAttachmentMaxDimension]);
+    window.localStorage.setItem(
+      IMAGE_ATTACHMENT_MAX_LONGEST_SIDE_STORAGE_KEY,
+      imageAttachmentMaxLongestSide.toString(),
+    );
+  }, [imageAttachmentMaxLongestSide]);
 
   useEffect(() => {
     const savedWebSearch = window.localStorage.getItem(WEB_SEARCH_STORAGE_KEY);
@@ -888,7 +903,7 @@ export function LiveConsole() {
       {
         format: screenFormat,
         jpegQuality: screenJpegQuality,
-        resolution: screenResolution,
+        maxLongestSide: screenMaxLongestSide,
       },
       () => {
         // User clicked browser's native «Stop sharing» button.
@@ -900,9 +915,9 @@ export function LiveConsole() {
 
     setIsScreenEnabled(true);
     appendEvent(
-      `Трансляция экрана включена (${screenFormat.toUpperCase()}, ${SCREEN_RESOLUTION_LABELS[screenResolution]}).`,
+      `Трансляция экрана включена (${screenFormat.toUpperCase()}, ${describeMaxLongestSide(screenMaxLongestSide)}).`,
     );
-  }, [appendEvent, isCameraEnabled, screenFormat, screenJpegQuality, screenResolution, stopCamera]);
+  }, [appendEvent, isCameraEnabled, screenFormat, screenJpegQuality, screenMaxLongestSide, stopCamera]);
 
   const handleToggleScreen = useCallback(async () => {
     setError(null);
@@ -1176,7 +1191,7 @@ export function LiveConsole() {
         const prepared = await prepareImageAttachment(file, {
           format: imageAttachmentFormat,
           jpegQuality: imageAttachmentJpegQuality,
-          maxDimension: imageAttachmentMaxDimension,
+          maxLongestSide: imageAttachmentMaxLongestSide,
         });
         setPendingAttachment(prepared);
       } catch (e) {
@@ -1185,7 +1200,7 @@ export function LiveConsole() {
         setPendingAttachment(null);
       }
     },
-    [imageAttachmentFormat, imageAttachmentJpegQuality, imageAttachmentMaxDimension],
+    [imageAttachmentFormat, imageAttachmentJpegQuality, imageAttachmentMaxLongestSide],
   );
 
   const handleAttachmentInputChange = useCallback(
@@ -1931,42 +1946,62 @@ export function LiveConsole() {
                         </div>
                         {screenFormat === 'jpeg' ? (
                           <div className="quality-row">
-                            <label htmlFor="screen-jpeg-quality-select">Качество JPEG:</label>
-                            <select
-                              id="screen-jpeg-quality-select"
-                              value={screenJpegQuality.toString()}
-                              onChange={(e) => {
-                                const parsed = parseFloat(e.target.value);
-                                if (isScreenJpegQuality(parsed)) setScreenJpegQuality(parsed);
-                              }}
-                            >
-                              {SCREEN_JPEG_QUALITIES.map((q) => (
-                                <option key={q} value={q.toString()}>
-                                  {SCREEN_JPEG_QUALITY_LABELS[q.toString()]}
-                                </option>
-                              ))}
-                            </select>
+                            <label htmlFor="screen-jpeg-quality-slider">
+                              Качество JPEG:{' '}
+                              <span className="quality-row-value">
+                                {formatJpegQuality(screenJpegQuality)}
+                                {screenJpegQuality === SCREEN_JPEG_QUALITY_DEFAULT
+                                  ? ' (по умолчанию)'
+                                  : ''}
+                              </span>
+                            </label>
+                            <input
+                              id="screen-jpeg-quality-slider"
+                              type="range"
+                              min={JPEG_QUALITY_MIN}
+                              max={JPEG_QUALITY_MAX}
+                              step={JPEG_QUALITY_STEP}
+                              value={screenJpegQuality}
+                              onChange={(e) =>
+                                setScreenJpegQuality(clampJpegQuality(parseFloat(e.target.value)))
+                              }
+                            />
+                            <div className="quality-row-scale">
+                              <span>{formatJpegQuality(JPEG_QUALITY_MIN)}</span>
+                              <span>{formatJpegQuality(JPEG_QUALITY_MAX)}</span>
+                            </div>
                           </div>
                         ) : null}
                         <div className="quality-row">
-                          <label htmlFor="screen-resolution-select">Разрешение:</label>
-                          <select
-                            id="screen-resolution-select"
-                            value={screenResolution}
-                            onChange={(e) => {
-                              const v = e.target.value;
-                              if (isScreenResolution(v)) setScreenResolution(v);
-                            }}
-                          >
-                            {SCREEN_RESOLUTIONS.map((r) => (
-                              <option key={r} value={r}>
-                                {SCREEN_RESOLUTION_LABELS[r]}
-                              </option>
-                            ))}
-                          </select>
+                          <label htmlFor="screen-resolution-slider">
+                            Разрешение трансляции:{' '}
+                            <span className="quality-row-value">
+                              {describeMaxLongestSide(screenMaxLongestSide)}
+                              {screenMaxLongestSide === SCREEN_MAX_LONGEST_SIDE_DEFAULT
+                                ? ' (по умолчанию)'
+                                : ''}
+                            </span>
+                          </label>
+                          <input
+                            id="screen-resolution-slider"
+                            type="range"
+                            min={SCREEN_MAX_LONGEST_SIDE_MIN}
+                            max={SCREEN_NATIVE_SLIDER_VALUE}
+                            step={SCREEN_MAX_LONGEST_SIDE_STEP}
+                            value={maxLongestSideToSlider(screenMaxLongestSide, SCREEN_NATIVE_SLIDER_VALUE)}
+                            onChange={(e) =>
+                              setScreenMaxLongestSide(
+                                sliderToMaxLongestSide(parseInt(e.target.value, 10), SCREEN_NATIVE_SLIDER_VALUE),
+                              )
+                            }
+                          />
+                          <div className="quality-row-scale">
+                            <span>{SCREEN_MAX_LONGEST_SIDE_MIN} px</span>
+                            <span>Родное</span>
+                          </div>
                         </div>
                         <p className="quality-section-note">
-                          Изменения применятся при следующем включении трансляции.
+                          Подсказка: для VS Code и подобного попробуй 1920 px и формат PNG. Изменения применятся при следующем включении трансляции.
                         </p>
                       </div>
                       <div className="quality-section">
@@ -1993,39 +2028,59 @@ export function LiveConsole() {
                         </div>
                         {imageAttachmentFormat === 'jpeg' ? (
                           <div className="quality-row">
-                            <label htmlFor="image-jpeg-quality-select">Качество JPEG:</label>
-                            <select
-                              id="image-jpeg-quality-select"
-                              value={imageAttachmentJpegQuality.toString()}
-                              onChange={(e) => {
-                                const parsed = parseFloat(e.target.value);
-                                if (isImageAttachmentJpegQuality(parsed)) setImageAttachmentJpegQuality(parsed);
-                              }}
-                            >
-                              {IMAGE_ATTACHMENT_JPEG_QUALITIES.map((q) => (
-                                <option key={q} value={q.toString()}>
-                                  {IMAGE_ATTACHMENT_JPEG_QUALITY_LABELS[q.toString()]}
-                                </option>
-                              ))}
-                            </select>
+                            <label htmlFor="image-jpeg-quality-slider">
+                              Качество JPEG:{' '}
+                              <span className="quality-row-value">
+                                {formatJpegQuality(imageAttachmentJpegQuality)}
+                                {imageAttachmentJpegQuality === IMAGE_ATTACHMENT_JPEG_QUALITY_DEFAULT
+                                  ? ' (по умолчанию)'
+                                  : ''}
+                              </span>
+                            </label>
+                            <input
+                              id="image-jpeg-quality-slider"
+                              type="range"
+                              min={JPEG_QUALITY_MIN}
+                              max={JPEG_QUALITY_MAX}
+                              step={JPEG_QUALITY_STEP}
+                              value={imageAttachmentJpegQuality}
+                              onChange={(e) =>
+                                setImageAttachmentJpegQuality(clampJpegQuality(parseFloat(e.target.value)))
+                              }
+                            />
+                            <div className="quality-row-scale">
+                              <span>{formatJpegQuality(JPEG_QUALITY_MIN)}</span>
+                              <span>{formatJpegQuality(JPEG_QUALITY_MAX)}</span>
+                            </div>
                           </div>
                         ) : null}
                         <div className="quality-row">
-                          <label htmlFor="image-max-dimension-select">Макс. сторона:</label>
-                          <select
-                            id="image-max-dimension-select"
-                            value={imageAttachmentMaxDimension}
-                            onChange={(e) => {
-                              const v = e.target.value;
-                              if (isImageAttachmentMaxDimension(v)) setImageAttachmentMaxDimension(v);
-                            }}
-                          >
-                            {IMAGE_ATTACHMENT_MAX_DIMENSIONS.map((d) => (
-                              <option key={d} value={d}>
-                                {IMAGE_ATTACHMENT_MAX_DIMENSION_LABELS[d]}
-                              </option>
-                            ))}
-                          </select>
+                          <label htmlFor="image-resolution-slider">
+                            Макс. сторона:{' '}
+                            <span className="quality-row-value">
+                              {describeMaxLongestSide(imageAttachmentMaxLongestSide)}
+                              {imageAttachmentMaxLongestSide === IMAGE_ATTACHMENT_MAX_LONGEST_SIDE_DEFAULT
+                                ? ' (по умолчанию)'
+                                : ''}
+                            </span>
+                          </label>
+                          <input
+                            id="image-resolution-slider"
+                            type="range"
+                            min={IMAGE_ATTACHMENT_MAX_LONGEST_SIDE_MIN}
+                            max={IMAGE_NATIVE_SLIDER_VALUE}
+                            step={IMAGE_ATTACHMENT_MAX_LONGEST_SIDE_STEP}
+                            value={maxLongestSideToSlider(imageAttachmentMaxLongestSide, IMAGE_NATIVE_SLIDER_VALUE)}
+                            onChange={(e) =>
+                              setImageAttachmentMaxLongestSide(
+                                sliderToMaxLongestSide(parseInt(e.target.value, 10), IMAGE_NATIVE_SLIDER_VALUE),
+                              )
+                            }
+                          />
+                          <div className="quality-row-scale">
+                            <span>{IMAGE_ATTACHMENT_MAX_LONGEST_SIDE_MIN} px</span>
+                            <span>Родное</span>
+                          </div>
                         </div>
                       </div>
                       <div className="api-key-panel">

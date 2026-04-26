@@ -128,32 +128,54 @@ export function isScreenFormat(value: unknown): value is ScreenFormat {
   return typeof value === 'string' && (SCREEN_FORMATS as readonly string[]).includes(value);
 }
 
-export const SCREEN_JPEG_QUALITIES = [0.5, 0.7, 0.85, 0.95] as const;
-export type ScreenJpegQuality = (typeof SCREEN_JPEG_QUALITIES)[number];
-export const SCREEN_JPEG_QUALITY_DEFAULT: ScreenJpegQuality = 0.7;
+// JPEG quality is a continuous slider 0.40..1.00 step 0.05. We store the
+// raw float in localStorage; clampJpegQuality() clamps and snaps to the step
+// so an invalid/legacy value can't break the canvas API.
+export const JPEG_QUALITY_MIN = 0.4;
+export const JPEG_QUALITY_MAX = 1.0;
+export const JPEG_QUALITY_STEP = 0.05;
+export const SCREEN_JPEG_QUALITY_DEFAULT = 0.7;
+export const IMAGE_ATTACHMENT_JPEG_QUALITY_DEFAULT = 0.85;
 
-export function isScreenJpegQuality(value: unknown): value is ScreenJpegQuality {
-  return typeof value === 'number' && (SCREEN_JPEG_QUALITIES as readonly number[]).includes(value);
+export function clampJpegQuality(value: number): number {
+  if (!Number.isFinite(value)) return SCREEN_JPEG_QUALITY_DEFAULT;
+  const clamped = Math.min(JPEG_QUALITY_MAX, Math.max(JPEG_QUALITY_MIN, value));
+  // Snap to nearest step so the slider's reported value always matches what
+  // we send to canvas.toDataURL (and what we display in the UI).
+  const stepped = Math.round((clamped - JPEG_QUALITY_MIN) / JPEG_QUALITY_STEP)
+    * JPEG_QUALITY_STEP + JPEG_QUALITY_MIN;
+  return Math.round(stepped * 100) / 100;
 }
 
-export const SCREEN_RESOLUTIONS = ['hd', 'full-hd', '2k', 'native'] as const;
-export type ScreenResolution = (typeof SCREEN_RESOLUTIONS)[number];
-export const SCREEN_RESOLUTION_DEFAULT: ScreenResolution = 'hd';
+// Max-longest-side in pixels. 0 is the sentinel meaning «native resolution
+// of the source» — the streamer skips downscaling and ships the raw frame
+// dimensions. The slider in the UI exposes a discrete range with a final
+// «Родное» tick at the right edge.
+export const SCREEN_MAX_LONGEST_SIDE_MIN = 800;
+export const SCREEN_MAX_LONGEST_SIDE_MAX = 3840;
+export const SCREEN_MAX_LONGEST_SIDE_STEP = 80;
+export const SCREEN_MAX_LONGEST_SIDE_DEFAULT = 1280;
 
-export function isScreenResolution(value: unknown): value is ScreenResolution {
-  return typeof value === 'string' && (SCREEN_RESOLUTIONS as readonly string[]).includes(value);
+export const IMAGE_ATTACHMENT_MAX_LONGEST_SIDE_MIN = 480;
+export const IMAGE_ATTACHMENT_MAX_LONGEST_SIDE_MAX = 3840;
+export const IMAGE_ATTACHMENT_MAX_LONGEST_SIDE_STEP = 80;
+export const IMAGE_ATTACHMENT_MAX_LONGEST_SIDE_DEFAULT = 1280;
+
+export const MAX_LONGEST_SIDE_NATIVE = 0;
+
+export function clampMaxLongestSide(value: number, min: number, max: number, step: number): number {
+  if (!Number.isFinite(value)) return min;
+  if (value === MAX_LONGEST_SIDE_NATIVE) return MAX_LONGEST_SIDE_NATIVE;
+  const clamped = Math.min(max, Math.max(min, value));
+  return Math.round((clamped - min) / step) * step + min;
 }
 
-/** Max longest-side in pixels for each preset. `native` returns Infinity — the
- *  streamer reads the actual source dimensions. */
-export const SCREEN_RESOLUTION_MAX: Record<ScreenResolution, number> = {
-  hd: 1280,
-  'full-hd': 1920,
-  '2k': 2560,
-  native: Number.POSITIVE_INFINITY,
-};
+export function describeMaxLongestSide(value: number): string {
+  if (value === MAX_LONGEST_SIDE_NATIVE) return 'Родное (без сжатия)';
+  return `${value} px`;
+}
 
-// ---- Attached-image quality settings ----
+// ---- Attached-image format ----
 
 export const IMAGE_ATTACHMENT_FORMATS = ['jpeg', 'png'] as const;
 export type ImageAttachmentFormat = (typeof IMAGE_ATTACHMENT_FORMATS)[number];
@@ -162,30 +184,6 @@ export const IMAGE_ATTACHMENT_FORMAT_DEFAULT: ImageAttachmentFormat = 'jpeg';
 export function isImageAttachmentFormat(value: unknown): value is ImageAttachmentFormat {
   return typeof value === 'string' && (IMAGE_ATTACHMENT_FORMATS as readonly string[]).includes(value);
 }
-
-export const IMAGE_ATTACHMENT_JPEG_QUALITIES = [0.5, 0.7, 0.85, 0.95] as const;
-export type ImageAttachmentJpegQuality = (typeof IMAGE_ATTACHMENT_JPEG_QUALITIES)[number];
-export const IMAGE_ATTACHMENT_JPEG_QUALITY_DEFAULT: ImageAttachmentJpegQuality = 0.85;
-
-export function isImageAttachmentJpegQuality(value: unknown): value is ImageAttachmentJpegQuality {
-  return typeof value === 'number' && (IMAGE_ATTACHMENT_JPEG_QUALITIES as readonly number[]).includes(value);
-}
-
-export const IMAGE_ATTACHMENT_MAX_DIMENSIONS = ['small', 'medium', 'large', 'xl', 'native'] as const;
-export type ImageAttachmentMaxDimension = (typeof IMAGE_ATTACHMENT_MAX_DIMENSIONS)[number];
-export const IMAGE_ATTACHMENT_MAX_DIMENSION_DEFAULT: ImageAttachmentMaxDimension = 'medium';
-
-export function isImageAttachmentMaxDimension(value: unknown): value is ImageAttachmentMaxDimension {
-  return typeof value === 'string' && (IMAGE_ATTACHMENT_MAX_DIMENSIONS as readonly string[]).includes(value);
-}
-
-export const IMAGE_ATTACHMENT_MAX_DIMENSION_PIXELS: Record<ImageAttachmentMaxDimension, number> = {
-  small: 640,
-  medium: 1280,
-  large: 1920,
-  xl: 2560,
-  native: Number.POSITIVE_INFINITY,
-};
 export const SYSTEM_INSTRUCTION = [
   'Ты — голосовой собеседник. Твой единственный канал общения — голос: пользователь тебя слушает, а не читает.',
   '',

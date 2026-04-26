@@ -1,15 +1,16 @@
 import {
   ATTACHED_IMAGE_MAX_BYTES,
-  IMAGE_ATTACHMENT_MAX_DIMENSION_PIXELS,
+  MAX_LONGEST_SIDE_NATIVE,
   type ImageAttachmentFormat,
-  type ImageAttachmentMaxDimension,
 } from '@/lib/live-session-config';
 
 export type ImageAttachmentOptions = {
   format: ImageAttachmentFormat;
   /** Only used when `format === 'jpeg'`. */
   jpegQuality: number;
-  maxDimension: ImageAttachmentMaxDimension;
+  /** Cap for the longest side after re-encoding, in pixels. Use
+   *  `MAX_LONGEST_SIDE_NATIVE` (0) to keep the original dimensions. */
+  maxLongestSide: number;
 };
 
 export type PreparedImageAttachment = {
@@ -83,11 +84,11 @@ export async function prepareImageAttachment(
   const originalDataUrl = await readFileAsDataUrl(file);
   const image = await loadImageFromDataUrl(originalDataUrl);
 
-  const maxLongest = IMAGE_ATTACHMENT_MAX_DIMENSION_PIXELS[options.maxDimension];
   const longest = Math.max(image.naturalWidth, image.naturalHeight);
-  const scale = Number.isFinite(maxLongest) && longest > maxLongest
-    ? maxLongest / longest
-    : 1;
+  const scale =
+    options.maxLongestSide !== MAX_LONGEST_SIDE_NATIVE && longest > options.maxLongestSide
+      ? options.maxLongestSide / longest
+      : 1;
   const targetWidth = Math.max(1, Math.round(image.naturalWidth * scale));
   const targetHeight = Math.max(1, Math.round(image.naturalHeight * scale));
 

@@ -775,6 +775,25 @@ input {
   font-size: 0.95rem;
 }
 
+.quality-row input[type='range'] {
+  width: 100%;
+  margin: 0;
+}
+
+.quality-row-value {
+  font-weight: 700;
+  color: var(--accent, #1f8a70);
+  font-variant-numeric: tabular-nums;
+}
+
+.quality-row-scale {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.75rem;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
 @media (max-width: 640px) {
   .settings-controls {
     grid-template-columns: 1fr;

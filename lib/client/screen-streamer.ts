@@ -1,8 +1,7 @@
 import {
+  MAX_LONGEST_SIDE_NATIVE,
   SCREEN_FRAME_RATE,
-  SCREEN_RESOLUTION_MAX,
   type ScreenFormat,
-  type ScreenResolution,
 } from '@/lib/live-session-config';
 
 type FrameCallback = (base64Data: string, mimeType: string) => void;
@@ -12,7 +11,12 @@ export type ScreenStreamerOptions = {
   format: ScreenFormat;
   /** Only used when `format === 'jpeg'`. */
   jpegQuality: number;
-  resolution: ScreenResolution;
+  /**
+   * Cap for the longest side of the encoded frame, in pixels. Use
+   * `MAX_LONGEST_SIDE_NATIVE` (0) to skip downscaling and ship the raw
+   * source dimensions.
+   */
+  maxLongestSide: number;
 };
 
 export function isScreenShareSupported(): boolean {
@@ -26,17 +30,19 @@ export function isScreenShareSupported(): boolean {
 function resolveCanvasSize(
   sourceWidth: number,
   sourceHeight: number,
-  resolution: ScreenResolution,
+  maxLongestSide: number,
 ): { width: number; height: number } {
   if (sourceWidth <= 0 || sourceHeight <= 0) {
     return { width: 1280, height: 720 };
   }
-  const maxLongest = SCREEN_RESOLUTION_MAX[resolution];
-  const longest = Math.max(sourceWidth, sourceHeight);
-  if (!Number.isFinite(maxLongest) || longest <= maxLongest) {
+  if (maxLongestSide === MAX_LONGEST_SIDE_NATIVE) {
     return { width: sourceWidth, height: sourceHeight };
   }
-  const scale = maxLongest / longest;
+  const longest = Math.max(sourceWidth, sourceHeight);
+  if (longest <= maxLongestSide) {
+    return { width: sourceWidth, height: sourceHeight };
+  }
+  const scale = maxLongestSide / longest;
   return {
     width: Math.max(1, Math.round(sourceWidth * scale)),
     height: Math.max(1, Math.round(sourceHeight * scale)),
@@ -65,16 +71,15 @@ export class ScreenStreamer {
     this.onAutoStopHandler = onAutoStop ?? null;
     this.options = options;
 
-    // Hint the browser at the desired ideal — for `native` we still don't
-    // request a fixed size so we get the source's true resolution.
-    const targetMax = SCREEN_RESOLUTION_MAX[options.resolution];
-    const constraints: MediaTrackConstraints = Number.isFinite(targetMax)
-      ? {
-          width: { ideal: targetMax },
-          height: { ideal: Math.round(targetMax * (9 / 16)) },
+    // Hint the browser at the desired ideal — for native we just don't
+    // ask for a fixed size so we get the source's true resolution.
+    const constraints: MediaTrackConstraints = options.maxLongestSide === MAX_LONGEST_SIDE_NATIVE
+      ? { frameRate: { ideal: 5 } }
+      : {
+          width: { ideal: options.maxLongestSide },
+          height: { ideal: Math.round(options.maxLongestSide * (9 / 16)) },
           frameRate: { ideal: 5 },
-        }
-      : { frameRate: { ideal: 5 } };
+        };
 
     this.mediaStream = await navigator.mediaDevices.getDisplayMedia({
       video: constraints,
@@ -116,7 +121,7 @@ export class ScreenStreamer {
       const { width, height } = resolveCanvasSize(
         sourceWidth,
         sourceHeight,
-        this.options.resolution,
+        this.options.maxLongestSide,
       );
       if (this.canvas.width !== width || this.canvas.height !== height) {
         this.canvas.width = width;
