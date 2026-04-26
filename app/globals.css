@@ -133,7 +133,9 @@ input {
 
 .icon-row {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  /* Auto-fit so the row can hold either 4 or 5 buttons (the screen-share
+     toggle is conditionally rendered on desktop). */
+  grid-template-columns: repeat(auto-fit, minmax(3rem, 1fr));
   gap: 0.6rem;
   margin: 0.75rem 0;
 }
@@ -924,6 +926,101 @@ input {
   display: flex;
   gap: 0.75rem;
   margin-top: 1rem;
+  align-items: stretch;
+}
+
+.composer-attach-button {
+  min-height: 3rem;
+  width: 3rem;
+  padding: 0;
+  border-radius: 18px;
+  flex: 0 0 auto;
+}
+
+.composer-attachment {
+  margin-top: 0.75rem;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.5rem;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--panel-strong);
+}
+
+.composer-attachment-thumb {
+  width: 56px;
+  height: 56px;
+  object-fit: cover;
+  border-radius: 10px;
+  flex: 0 0 auto;
+  background: #000;
+}
+
+.composer-attachment-meta {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.composer-attachment-name {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.composer-attachment-hint {
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+
+.composer-attachment-remove {
+  flex: 0 0 auto;
+  width: 2rem;
+  height: 2rem;
+  border-radius: 50%;
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--muted);
+  font-size: 1.2rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.composer-attachment-remove:hover {
+  color: var(--text);
+  border-color: var(--text);
+}
+
+.composer-attachment-error {
+  margin: 0.5rem 0 0;
+  color: #b91c1c;
+  font-size: 0.85rem;
+}
+
+.message-image {
+  display: block;
+  max-width: 100%;
+  max-height: 300px;
+  margin-top: 0.5rem;
+  border-radius: 12px;
+  object-fit: contain;
+  background: #000;
+}
+
+.hidden-video {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+  left: -9999px;
+  top: -9999px;
 }
 
 .composer input {
@@ -1110,10 +1207,26 @@ input {
   }
 
   .composer {
-    flex-direction: column;
+    flex-wrap: wrap;
   }
 
-  .composer button,
+  .composer > input[type='text'],
+  .composer > input:not([type]) {
+    flex: 1 1 100%;
+    order: 2;
+  }
+
+  .composer .composer-attach-button {
+    order: 1;
+    width: 2.6rem;
+    min-height: 2.6rem;
+  }
+
+  .composer .primary-button {
+    order: 3;
+    flex: 1 1 100%;
+  }
+
   .controls-row button {
     width: 100%;
   }

@@ -1,11 +1,13 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, type ChangeEvent } from 'react';
 import { createPortal } from 'react-dom';
 import { BrowserAudioPlayer } from '@/lib/client/browser-audio-player';
 import { CameraStreamer } from '@/lib/client/camera-streamer';
 import { GeminiLiveClient } from '@/lib/client/gemini-live-client';
 import { MicrophoneRecorder } from '@/lib/client/microphone-recorder';
+import { ScreenStreamer, isScreenShareSupported } from '@/lib/client/screen-streamer';
+import { prepareImageAttachment, type PreparedImageAttachment } from '@/lib/client/image-attachment';
 import type { LiveServerEvent } from '@/lib/client/live-message-parser';
 import {
   LIVE_LANGUAGES,
@@ -29,6 +31,8 @@ type ChatMessage = {
   role: 'user' | 'assistant' | 'system';
   text: string;
   pending?: boolean;
+  imageDataUrl?: string;
+  imageName?: string;
 };
 
 type TokenPayload = {
@@ -136,6 +140,10 @@ export function LiveConsole() {
   const [isCameraFloating, setIsCameraFloating] = useState(false);
   const [cameraStreamVersion, setCameraStreamVersion] = useState(0);
   const [cameraFacingMode, setCameraFacingMode] = useState<'user' | 'environment'>('environment');
+  const [isScreenEnabled, setIsScreenEnabled] = useState(false);
+  const [canShareScreen, setCanShareScreen] = useState(false);
+  const [pendingAttachment, setPendingAttachment] = useState<PreparedImageAttachment | null>(null);
+  const [attachmentError, setAttachmentError] = useState<string | null>(null);
   const [sessionExpiry, setSessionExpiry] = useState<string | null>(null);
   const [authMode, setAuthMode] = useState<AuthMode>('server-token');
   const [isBusy, setIsBusy] = useState(false);
@@ -169,6 +177,9 @@ export function LiveConsole() {
   const cameraRef = useRef<CameraStreamer | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const floatingVideoRef = useRef<HTMLVideoElement | null>(null);
+  const screenRef = useRef<ScreenStreamer | null>(null);
+  const screenVideoRef = useRef<HTMLVideoElement | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
   const pendingMessageIdsRef = useRef<{ user: string | null; assistant: string | null }>({
     user: null,
     assistant: null,
@@ -251,6 +262,11 @@ export function LiveConsole() {
     setIsMicEnabled(false);
   }, []);
 
+  const stopScreen = useCallback(() => {
+    screenRef.current?.stop(screenVideoRef.current);
+    setIsScreenEnabled(false);
+  }, []);
+
   const stopCamera = useCallback(() => {
     cameraRef.current?.stop(videoRef.current);
     setIsCameraEnabled(false);
@@ -279,13 +295,14 @@ export function LiveConsole() {
   const teardownSession = useCallback(() => {
     stopMicrophone();
     stopCamera();
+    stopScreen();
     clientRef.current?.close();
     clientRef.current = null;
     setSessionExpiry(null);
     audioPlayerRef.current?.interrupt();
     finalizePendingMessage('assistant');
     finalizePendingMessage('user');
-  }, [finalizePendingMessage, stopCamera, stopMicrophone]);
+  }, [finalizePendingMessage, stopCamera, stopMicrophone, stopScreen]);
 
   const handleLiveEvent = useCallback(
     async (event: LiveServerEvent) => {
@@ -516,6 +533,10 @@ export function LiveConsole() {
   const [isPortalReady, setIsPortalReady] = useState(false);
   useEffect(() => {
     setIsPortalReady(true);
+    // getDisplayMedia is desktop-only in practice (no Android Chrome / Safari
+    // iOS support), so the toggle is rendered conditionally. We check once on
+    // mount; the answer doesn't change between renders.
+    setCanShareScreen(isScreenShareSupported());
   }, []);
 
   useEffect(() => {
@@ -686,6 +707,13 @@ export function LiveConsole() {
       throw new Error('Не найден элемент предпросмотра камеры.');
     }
 
+    // Camera and screen share both fight for the same video channel — only
+    // one source should be streaming frames at a time.
+    if (screenRef.current?.isActive()) {
+      stopScreen();
+      appendEvent('Трансляция экрана остановлена — включена камера.');
+    }
+
     if (!cameraRef.current) {
       cameraRef.current = new CameraStreamer();
     }
@@ -698,7 +726,69 @@ export function LiveConsole() {
     setIsCameraFloating(true);
     setCameraStreamVersion((v) => v + 1);
     appendEvent(`Камера включена (${cameraFacingMode === 'user' ? 'фронтальная' : 'основная'}).`);
-  }, [appendEvent, cameraFacingMode]);
+  }, [appendEvent, cameraFacingMode, stopScreen]);
+
+  const startScreen = useCallback(async () => {
+    if (!clientRef.current) {
+      throw new Error('Сначала запустите сессию, а потом включайте трансляцию экрана.');
+    }
+
+    if (!screenVideoRef.current) {
+      throw new Error('Не найден элемент для предпросмотра экрана.');
+    }
+
+    if (isCameraEnabled) {
+      stopCamera();
+      appendEvent('Камера выключена — включена трансляция экрана.');
+    }
+
+    if (!screenRef.current) {
+      screenRef.current = new ScreenStreamer();
+    }
+
+    await screenRef.current.start(
+      screenVideoRef.current,
+      (frame, mimeType) => {
+        clientRef.current?.sendVideo(frame, mimeType);
+      },
+      () => {
+        // User clicked browser's native «Stop sharing» button.
+        screenRef.current?.stop(screenVideoRef.current);
+        setIsScreenEnabled(false);
+        appendEvent('Трансляция экрана остановлена.');
+      },
+    );
+
+    setIsScreenEnabled(true);
+    appendEvent('Трансляция экрана включена. Liv видит то, что вы показываете.');
+  }, [appendEvent, isCameraEnabled, stopCamera]);
+
+  const handleToggleScreen = useCallback(async () => {
+    setError(null);
+
+    try {
+      if (isScreenEnabled) {
+        stopScreen();
+        appendEvent('Трансляция экрана выключена.');
+        return;
+      }
+
+      await startScreen();
+    } catch (toggleError) {
+      // The browser surface picker raises NotAllowedError when the user
+      // clicks Cancel — that's not really an error, swallow it quietly.
+      const isCancel =
+        toggleError instanceof Error &&
+        (toggleError.name === 'NotAllowedError' || toggleError.name === 'AbortError');
+      if (isCancel) {
+        appendEvent('Трансляция экрана отменена.');
+        return;
+      }
+      const message = toggleError instanceof Error ? toggleError.message : 'Не удалось включить трансляцию экрана.';
+      setError(message);
+      appendEvent(message);
+    }
+  }, [appendEvent, isScreenEnabled, startScreen, stopScreen]);
 
   const startSession = useCallback(
     async (options?: { resetConversation?: boolean }) => {
@@ -896,18 +986,71 @@ export function LiveConsole() {
 
   const handleSendText = useCallback(() => {
     const trimmed = input.trim();
+    const attachment = pendingAttachment;
 
-    if (!trimmed || !clientRef.current) {
+    if (!clientRef.current) {
+      return;
+    }
+    if (!trimmed && !attachment) {
       return;
     }
 
-    clientRef.current.sendText(trimmed);
+    if (attachment) {
+      clientRef.current.sendVideo(attachment.base64, attachment.mimeType);
+    }
+
+    const messageText = trimmed.length > 0
+      ? trimmed
+      : attachment
+        ? '🖼 Картинка'
+        : '';
+
+    if (trimmed) {
+      clientRef.current.sendText(trimmed);
+    } else if (attachment) {
+      // Without any accompanying text Liv often does nothing with a bare
+      // image, so nudge it to actually look at and describe the picture.
+      clientRef.current.sendText('Опиши, что на этой картинке.');
+    }
+
     setMessages((current) => [
       ...current,
-      { id: nextMessageId(), role: 'user', text: trimmed },
+      {
+        id: nextMessageId(),
+        role: 'user',
+        text: messageText,
+        imageDataUrl: attachment?.dataUrl,
+        imageName: attachment?.name,
+      },
     ]);
     setInput('');
-  }, [input, nextMessageId]);
+    setPendingAttachment(null);
+    setAttachmentError(null);
+  }, [input, nextMessageId, pendingAttachment]);
+
+  const handleAttachmentPicked = useCallback(async (file: File) => {
+    setAttachmentError(null);
+    try {
+      const prepared = await prepareImageAttachment(file);
+      setPendingAttachment(prepared);
+    } catch (e) {
+      const message = e instanceof Error ? e.message : 'Не удалось прочитать картинку.';
+      setAttachmentError(message);
+      setPendingAttachment(null);
+    }
+  }, []);
+
+  const handleAttachmentInputChange = useCallback(
+    async (event: ChangeEvent<HTMLInputElement>) => {
+      const file = event.target.files?.[0];
+      if (file) {
+        await handleAttachmentPicked(file);
+      }
+      // Reset so the same file can be picked again later.
+      event.target.value = '';
+    },
+    [handleAttachmentPicked],
+  );
 
 
 
@@ -942,6 +1085,17 @@ export function LiveConsole() {
 
   return (
     <section className="console-shell">
+      {/* Off-screen video element used by the screen-share streamer to grab
+          frames from the captured display stream. The user already sees the
+          shared content on their own monitor, so we don't render a preview. */}
+      <video
+        ref={screenVideoRef}
+        autoPlay
+        muted
+        playsInline
+        aria-hidden="true"
+        className="hidden-video"
+      />
       <div className="console-panel status-panel">
         <div className="status-grid status-grid--single">
           <div className="status-card">
@@ -1016,6 +1170,22 @@ export function LiveConsole() {
           >
             <span aria-hidden="true">📷</span>
           </button>
+          {canShareScreen ? (
+            <button
+              type="button"
+              className={`icon-button${isScreenEnabled ? ' icon-button--on' : ''}`}
+              onClick={() => void handleToggleScreen()}
+              disabled={!isSessionActive}
+              aria-label={isScreenEnabled ? 'Остановить трансляцию экрана' : 'Транслировать экран'}
+              title={
+                isScreenEnabled
+                  ? 'Экран транслируется. Liv видит, что вы показываете.'
+                  : 'Транслировать экран — Liv будет видеть выбранное окно или весь экран.'
+              }
+            >
+              <span aria-hidden="true">🖥️</span>
+            </button>
+          ) : null}
           <button
             type="button"
             className={`icon-button${isMicEnabled ? ' icon-button--on' : ''}`}
@@ -1164,6 +1334,13 @@ export function LiveConsole() {
                         ? 'Вы'
                         : 'Система'}
                   </span>
+                  {message.imageDataUrl ? (
+                    <img
+                      src={message.imageDataUrl}
+                      alt={message.imageName || 'Прикреплённая картинка'}
+                      className="message-image"
+                    />
+                  ) : null}
                   <p>{message.text}</p>
                   {message.pending ? <span className="message-pending">Слушаю...</span> : null}
                 </article>
@@ -1171,7 +1348,57 @@ export function LiveConsole() {
             )}
           </div>
 
+          {pendingAttachment ? (
+            <div className="composer-attachment" role="group" aria-label="Прикреплённая картинка">
+              <img
+                src={pendingAttachment.dataUrl}
+                alt={pendingAttachment.name}
+                className="composer-attachment-thumb"
+              />
+              <div className="composer-attachment-meta">
+                <span className="composer-attachment-name" title={pendingAttachment.name}>
+                  {pendingAttachment.name}
+                </span>
+                <span className="composer-attachment-hint">
+                  Liv увидит эту картинку вместе с вашим следующим сообщением.
+                </span>
+              </div>
+              <button
+                type="button"
+                className="composer-attachment-remove"
+                onClick={() => {
+                  setPendingAttachment(null);
+                  setAttachmentError(null);
+                }}
+                aria-label="Убрать картинку"
+                title="Убрать картинку"
+              >
+                ×
+              </button>
+            </div>
+          ) : null}
+          {attachmentError ? (
+            <p className="composer-attachment-error">{attachmentError}</p>
+          ) : null}
+
           <div className="composer">
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              hidden
+              onChange={(event) => void handleAttachmentInputChange(event)}
+            />
+            <button
+              type="button"
+              className="icon-button composer-attach-button"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={!isSessionActive}
+              aria-label="Прикрепить картинку"
+              title="Прикрепить картинку — Liv увидит её и сможет о ней рассказать."
+            >
+              <span aria-hidden="true">📎</span>
+            </button>
             <input
               value={input}
               onChange={(event) => setInput(event.target.value)}
@@ -1180,10 +1407,14 @@ export function LiveConsole() {
                   handleSendText();
                 }
               }}
-              placeholder="Введите сообщение"
+              placeholder={pendingAttachment ? 'Подпишите картинку или отправьте сразу' : 'Введите сообщение'}
               disabled={!isSessionActive}
             />
-            <button className="primary-button" onClick={handleSendText} disabled={!isSessionActive || !input.trim()}>
+            <button
+              className="primary-button"
+              onClick={handleSendText}
+              disabled={!isSessionActive || (!input.trim() && !pendingAttachment)}
+            >
               Отправить
             </button>
           </div>
@@ -1245,6 +1476,18 @@ export function LiveConsole() {
               >
                 <span aria-hidden="true">📷</span>
               </button>
+              {canShareScreen ? (
+                <button
+                  type="button"
+                  className={`icon-button icon-button--mini${isScreenEnabled ? ' icon-button--on' : ''}`}
+                  onClick={() => void handleToggleScreen()}
+                  disabled={!isSessionActive}
+                  aria-label={isScreenEnabled ? 'Остановить трансляцию экрана' : 'Транслировать экран'}
+                  title={isScreenEnabled ? 'Экран транслируется' : 'Транслировать экран'}
+                >
+                  <span aria-hidden="true">🖥️</span>
+                </button>
+              ) : null}
             </div>,
             document.body,
           )
