@@ -132,12 +132,15 @@ input {
 }
 
 .icon-row {
-  display: grid;
-  /* Auto-fit so the row can hold either 4 or 5 buttons (the screen-share
-     toggle is conditionally rendered on desktop). */
-  grid-template-columns: repeat(auto-fit, minmax(3rem, 1fr));
+  display: flex;
+  flex-wrap: wrap;
   gap: 0.6rem;
   margin: 0.75rem 0;
+}
+
+.icon-row > .icon-button {
+  flex: 1 1 3rem;
+  min-width: 2.8rem;
 }
 
 .icon-button {
