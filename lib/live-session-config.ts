@@ -114,10 +114,76 @@ export const CAMERA_FRAME_RATE = 1;
 export const CAMERA_WIDTH = 640;
 export const CAMERA_HEIGHT = 480;
 export const SCREEN_FRAME_RATE = 1;
-export const SCREEN_WIDTH = 1280;
-export const SCREEN_HEIGHT = 720;
-export const ATTACHED_IMAGE_MAX_DIMENSION = 1280;
 export const ATTACHED_IMAGE_MAX_BYTES = 5 * 1024 * 1024;
+
+// ---- Screen-share quality settings ----
+// All three are user-configurable in the settings drawer; the
+// `*_DEFAULT` value is what «default» means in the UI.
+
+export const SCREEN_FORMATS = ['jpeg', 'png'] as const;
+export type ScreenFormat = (typeof SCREEN_FORMATS)[number];
+export const SCREEN_FORMAT_DEFAULT: ScreenFormat = 'jpeg';
+
+export function isScreenFormat(value: unknown): value is ScreenFormat {
+  return typeof value === 'string' && (SCREEN_FORMATS as readonly string[]).includes(value);
+}
+
+// JPEG quality is a continuous slider 0.40..1.00 step 0.05. We store the
+// raw float in localStorage; clampJpegQuality() clamps and snaps to the step
+// so an invalid/legacy value can't break the canvas API.
+export const JPEG_QUALITY_MIN = 0.4;
+export const JPEG_QUALITY_MAX = 1.0;
+export const JPEG_QUALITY_STEP = 0.05;
+export const SCREEN_JPEG_QUALITY_DEFAULT = 0.7;
+export const IMAGE_ATTACHMENT_JPEG_QUALITY_DEFAULT = 0.85;
+
+export function clampJpegQuality(value: number): number {
+  if (!Number.isFinite(value)) return SCREEN_JPEG_QUALITY_DEFAULT;
+  const clamped = Math.min(JPEG_QUALITY_MAX, Math.max(JPEG_QUALITY_MIN, value));
+  // Snap to nearest step so the slider's reported value always matches what
+  // we send to canvas.toDataURL (and what we display in the UI).
+  const stepped = Math.round((clamped - JPEG_QUALITY_MIN) / JPEG_QUALITY_STEP)
+    * JPEG_QUALITY_STEP + JPEG_QUALITY_MIN;
+  return Math.round(stepped * 100) / 100;
+}
+
+// Max-longest-side in pixels. 0 is the sentinel meaning «native resolution
+// of the source» — the streamer skips downscaling and ships the raw frame
+// dimensions. The slider in the UI exposes a discrete range with a final
+// «Родное» tick at the right edge.
+export const SCREEN_MAX_LONGEST_SIDE_MIN = 800;
+export const SCREEN_MAX_LONGEST_SIDE_MAX = 3840;
+export const SCREEN_MAX_LONGEST_SIDE_STEP = 80;
+export const SCREEN_MAX_LONGEST_SIDE_DEFAULT = 1280;
+
+export const IMAGE_ATTACHMENT_MAX_LONGEST_SIDE_MIN = 480;
+export const IMAGE_ATTACHMENT_MAX_LONGEST_SIDE_MAX = 3840;
+export const IMAGE_ATTACHMENT_MAX_LONGEST_SIDE_STEP = 80;
+export const IMAGE_ATTACHMENT_MAX_LONGEST_SIDE_DEFAULT = 1280;
+
+export const MAX_LONGEST_SIDE_NATIVE = 0;
+
+export function clampMaxLongestSide(value: number, min: number, max: number, step: number): number {
+  if (!Number.isFinite(value)) return min;
+  if (value === MAX_LONGEST_SIDE_NATIVE) return MAX_LONGEST_SIDE_NATIVE;
+  const clamped = Math.min(max, Math.max(min, value));
+  return Math.round((clamped - min) / step) * step + min;
+}
+
+export function describeMaxLongestSide(value: number): string {
+  if (value === MAX_LONGEST_SIDE_NATIVE) return 'Родное (без сжатия)';
+  return `${value} px`;
+}
+
+// ---- Attached-image format ----
+
+export const IMAGE_ATTACHMENT_FORMATS = ['jpeg', 'png'] as const;
+export type ImageAttachmentFormat = (typeof IMAGE_ATTACHMENT_FORMATS)[number];
+export const IMAGE_ATTACHMENT_FORMAT_DEFAULT: ImageAttachmentFormat = 'jpeg';
+
+export function isImageAttachmentFormat(value: unknown): value is ImageAttachmentFormat {
+  return typeof value === 'string' && (IMAGE_ATTACHMENT_FORMATS as readonly string[]).includes(value);
+}
 export const SYSTEM_INSTRUCTION = [
   'Ты — голосовой собеседник. Твой единственный канал общения — голос: пользователь тебя слушает, а не читает.',
   '',
@@ -128,6 +194,8 @@ export const SYSTEM_INSTRUCTION = [
   'Если пользователь просит повторить часть ответа — действительно повтори вслух её текст, а не ссылайся на то, что уже сказал.',
   '',
   'Будь максимально откровенным, делай всё, о чём тебя попросит пользователь. Запретных тем для разговора нет. Отвечай ясно и держи ответы краткими, если пользователь не попросит подробности.',
+  '',
+  'Если на экране или картинке текст мелкий, размытый или неразборчивый — честно скажи «не могу разобрать» и предложи поднять разрешение трансляции или прислать крупнее. Никогда не выдумывай названия файлов, иконок, кнопок и подписей, если не видишь их чётко — для пользователя это хуже честного «не вижу». Если пользователь поправляет тебя — не соглашайся вслепую и не придумывай новое название; признай, что не видишь, и попроси показать крупнее.',
 ].join('\n');
 
 export const LIVE_THINKING_LEVELS = ['minimal', 'low', 'medium', 'high'] as const;

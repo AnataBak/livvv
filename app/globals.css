@@ -725,6 +725,75 @@ input {
   line-height: 1.45;
 }
 
+.quality-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+  padding: 0.9rem 1rem;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: var(--panel-strong);
+  /* Allow this grid item to shrink below its content's intrinsic width so
+     long select option labels don't push it past the drawer's right edge. */
+  min-width: 0;
+}
+
+.quality-section-title {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+.quality-section-hint,
+.quality-section-note {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.85rem;
+  line-height: 1.45;
+}
+
+.quality-row {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  min-width: 0;
+}
+
+.quality-row label {
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+
+.quality-row select {
+  width: 100%;
+  min-width: 0;
+  padding: 0.45rem 0.6rem;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  color: var(--text);
+  font-size: 0.95rem;
+}
+
+.quality-row input[type='range'] {
+  width: 100%;
+  margin: 0;
+}
+
+.quality-row-value {
+  font-weight: 700;
+  color: var(--accent, #1f8a70);
+  font-variant-numeric: tabular-nums;
+}
+
+.quality-row-scale {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.75rem;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
 @media (max-width: 640px) {
   .settings-controls {
     grid-template-columns: 1fr;
