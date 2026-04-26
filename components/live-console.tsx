@@ -97,6 +97,8 @@ const SCREEN_MAX_LONGEST_SIDE_STORAGE_KEY = 'gemini-live-screen-max-longest-side
 const IMAGE_ATTACHMENT_FORMAT_STORAGE_KEY = 'gemini-live-image-attachment-format';
 const IMAGE_ATTACHMENT_JPEG_QUALITY_STORAGE_KEY = 'gemini-live-image-attachment-jpeg-quality';
 const IMAGE_ATTACHMENT_MAX_LONGEST_SIDE_STORAGE_KEY = 'gemini-live-image-attachment-max-longest-side';
+const LIVE_PROXY_ENABLED_STORAGE_KEY = 'gemini-live-proxy-enabled';
+const LIVE_PROXY_HOST_STORAGE_KEY = 'gemini-live-proxy-host';
 
 const SCREEN_FORMAT_LABELS: Record<ScreenFormat, string> = {
   jpeg: 'JPEG (по умолчанию — легче по трафику)',
@@ -225,6 +227,8 @@ export function LiveConsole() {
   const [model, setModel] = useState<LiveModelId>(LIVE_MODEL_DEFAULT);
   const [hasResumptionHandle, setHasResumptionHandle] = useState<boolean>(false);
   const [memoryEnabled, setMemoryEnabled] = useState<boolean>(true);
+  const [liveProxyEnabled, setLiveProxyEnabled] = useState<boolean>(false);
+  const [liveProxyHost, setLiveProxyHost] = useState<string>('');
   const wakeLock = useWakeLock(WAKE_LOCK_ENABLED_STORAGE_KEY);
   const [isSettingsOpen, setIsSettingsOpen] = useState<boolean>(false);
   const [activeSettingsSection, setActiveSettingsSection] = useState<'prompt' | 'model'>('prompt');
@@ -512,6 +516,25 @@ export function LiveConsole() {
   useEffect(() => {
     window.localStorage.setItem(MEMORY_ENABLED_STORAGE_KEY, memoryEnabled ? 'true' : 'false');
   }, [memoryEnabled]);
+
+  useEffect(() => {
+    const savedEnabled = window.localStorage.getItem(LIVE_PROXY_ENABLED_STORAGE_KEY);
+    if (savedEnabled !== null) {
+      setLiveProxyEnabled(savedEnabled === 'true');
+    }
+    const savedHost = window.localStorage.getItem(LIVE_PROXY_HOST_STORAGE_KEY);
+    if (savedHost !== null) {
+      setLiveProxyHost(savedHost);
+    }
+  }, []);
+
+  useEffect(() => {
+    window.localStorage.setItem(LIVE_PROXY_ENABLED_STORAGE_KEY, liveProxyEnabled ? 'true' : 'false');
+  }, [liveProxyEnabled]);
+
+  useEffect(() => {
+    window.localStorage.setItem(LIVE_PROXY_HOST_STORAGE_KEY, liveProxyHost);
+  }, [liveProxyHost]);
 
   // ---- Screen-share + image-attachment quality settings ----
   // These all follow the same pattern: hydrate state from localStorage on
@@ -980,6 +1003,12 @@ export function LiveConsole() {
           appendEvent(
             `Параметры сессии: температура ${temperature}, голос ${voice}, размышления ${thinkingLevel}.`,
           );
+          const trimmedProxyHost = liveProxyHost.trim();
+          const effectiveLiveServiceHost =
+            liveProxyEnabled && trimmedProxyHost.length > 0 ? trimmedProxyHost : undefined;
+          if (effectiveLiveServiceHost) {
+            appendEvent(`Соединение через прокси: ${effectiveLiveServiceHost}`);
+          }
           client = new GeminiLiveClient(
             { apiKey: trimmedApiKey },
             {
@@ -1018,6 +1047,7 @@ export function LiveConsole() {
             systemInstruction.trim().length > 0 ? systemInstruction : undefined,
             model,
             language || undefined,
+            effectiveLiveServiceHost,
           );
         } else {
           setAuthMode('server-token');
@@ -2124,6 +2154,39 @@ export function LiveConsole() {
                             <span>Родное</span>
                           </div>
                         </div>
+                      </div>
+                      <div className="quality-section">
+                        <h3 className="quality-section-title">Маршрут (для стран с блокировкой)</h3>
+                        <p className="quality-section-hint">
+                          Если Google AI API не работает напрямую (Беларусь, Россия, Иран и т.п.) — пропускайте трафик через свой Cloudflare Worker. Воркер должен проксировать WebSocket в <code>generativelanguage.googleapis.com</code>.
+                        </p>
+                        <label className="search-toggle" htmlFor="live-proxy-enabled">
+                          <input
+                            id="live-proxy-enabled"
+                            type="checkbox"
+                            checked={liveProxyEnabled}
+                            onChange={(event) => setLiveProxyEnabled(event.target.checked)}
+                          />
+                          <span>Подключаться через прокси</span>
+                        </label>
+                        <div className="quality-row">
+                          <label htmlFor="live-proxy-host" className="quality-row-label">
+                            Адрес прокси
+                          </label>
+                          <input
+                            id="live-proxy-host"
+                            type="text"
+                            value={liveProxyHost}
+                            onChange={(event) => setLiveProxyHost(event.target.value)}
+                            placeholder="livvv-proxy.artemhttp.workers.dev"
+                            autoComplete="off"
+                            spellCheck={false}
+                            disabled={!liveProxyEnabled}
+                          />
+                        </div>
+                        <p className="quality-section-note">
+                          Можно вставить просто домен (<code>example.workers.dev</code>) или полный URL — лишний <code>https://</code> и слеши уберутся автоматически. Применится при следующем запуске сессии.
+                        </p>
                       </div>
                       <div className="api-key-panel">
                         <label className="api-key-label" htmlFor="gemini-api-key">

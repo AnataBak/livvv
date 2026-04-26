@@ -126,12 +126,33 @@ type GeminiLiveClientAuth =
   | { apiKey: string; accessToken?: never }
   | { accessToken: string; apiKey?: never };
 
-export function buildLiveServiceUrl(auth: GeminiLiveClientAuth) {
+export const DEFAULT_LIVE_SERVICE_HOST = 'generativelanguage.googleapis.com';
+
+/**
+ * Strips any protocol prefix and trailing slashes from a user-supplied host
+ * value so that it can be safely interpolated into a `wss://...` URL. This
+ * lets users paste either a bare hostname (`example.workers.dev`), an HTTP
+ * URL (`https://example.workers.dev/`) or a WebSocket URL
+ * (`wss://example.workers.dev`) into the proxy field.
+ */
+export function normalizeLiveServiceHost(input: string | null | undefined): string {
+  if (!input) return DEFAULT_LIVE_SERVICE_HOST;
+  const trimmed = input.trim();
+  if (!trimmed) return DEFAULT_LIVE_SERVICE_HOST;
+  return trimmed.replace(/^\s*(?:wss?|https?):\/\//i, '').replace(/\/+$/, '');
+}
+
+export function buildLiveServiceUrl(
+  auth: GeminiLiveClientAuth,
+  host: string = DEFAULT_LIVE_SERVICE_HOST,
+) {
+  const normalizedHost = normalizeLiveServiceHost(host);
+
   if ('apiKey' in auth && typeof auth.apiKey === 'string') {
-    return `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent?key=${encodeURIComponent(auth.apiKey)}`;
+    return `wss://${normalizedHost}/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent?key=${encodeURIComponent(auth.apiKey)}`;
   }
 
-  return `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContentConstrained?access_token=${encodeURIComponent(auth.accessToken || '')}`;
+  return `wss://${normalizedHost}/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContentConstrained?access_token=${encodeURIComponent(auth.accessToken || '')}`;
 }
 
 export class GeminiLiveClient {
@@ -146,6 +167,7 @@ export class GeminiLiveClient {
   private systemInstruction: string | undefined;
   private model: LiveModelId;
   private language: string | undefined;
+  private liveServiceHost: string;
   private pollInterval: NodeJS.Timeout | null = null;
   private isConnected = false;
   private socket: WebSocket | null = null;
@@ -161,6 +183,7 @@ export class GeminiLiveClient {
     systemInstruction?: string,
     model: LiveModelId = LIVE_MODEL_DEFAULT,
     language?: string,
+    liveServiceHost: string = DEFAULT_LIVE_SERVICE_HOST,
   ) {
     this.auth = auth;
     this.callbacks = callbacks;
@@ -172,6 +195,7 @@ export class GeminiLiveClient {
     this.systemInstruction = systemInstruction;
     this.model = model;
     this.language = language;
+    this.liveServiceHost = liveServiceHost;
   }
 
   async connect() {
@@ -191,7 +215,7 @@ export class GeminiLiveClient {
   }
 
   private async connectDirect() {
-    const serviceUrl = buildLiveServiceUrl(this.auth);
+    const serviceUrl = buildLiveServiceUrl(this.auth, this.liveServiceHost);
 
     await new Promise<void>((resolve, reject) => {
       const socket = new WebSocket(serviceUrl);
