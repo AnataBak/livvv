@@ -8,6 +8,32 @@ import { GeminiLiveClient } from '@/lib/client/gemini-live-client';
 import { MicrophoneRecorder } from '@/lib/client/microphone-recorder';
 import { ScreenStreamer, isScreenShareSupported } from '@/lib/client/screen-streamer';
 import { prepareImageAttachment, type PreparedImageAttachment } from '@/lib/client/image-attachment';
+import {
+  IMAGE_ATTACHMENT_FORMAT_DEFAULT,
+  IMAGE_ATTACHMENT_FORMATS,
+  IMAGE_ATTACHMENT_JPEG_QUALITIES,
+  IMAGE_ATTACHMENT_JPEG_QUALITY_DEFAULT,
+  IMAGE_ATTACHMENT_MAX_DIMENSION_DEFAULT,
+  IMAGE_ATTACHMENT_MAX_DIMENSIONS,
+  SCREEN_FORMAT_DEFAULT,
+  SCREEN_FORMATS,
+  SCREEN_JPEG_QUALITIES,
+  SCREEN_JPEG_QUALITY_DEFAULT,
+  SCREEN_RESOLUTION_DEFAULT,
+  SCREEN_RESOLUTIONS,
+  isImageAttachmentFormat,
+  isImageAttachmentJpegQuality,
+  isImageAttachmentMaxDimension,
+  isScreenFormat,
+  isScreenJpegQuality,
+  isScreenResolution,
+  type ImageAttachmentFormat,
+  type ImageAttachmentJpegQuality,
+  type ImageAttachmentMaxDimension,
+  type ScreenFormat,
+  type ScreenJpegQuality,
+  type ScreenResolution,
+} from '@/lib/live-session-config';
 import type { LiveServerEvent } from '@/lib/client/live-message-parser';
 import {
   LIVE_LANGUAGES,
@@ -62,6 +88,51 @@ const SYSTEM_INSTRUCTION_STORAGE_KEY = 'gemini-live-system-instruction';
 const SYSTEM_INSTRUCTION_PRESETS_STORAGE_KEY = 'gemini-live-system-instruction-presets';
 const MODEL_STORAGE_KEY = 'gemini-live-model';
 const MEMORY_ENABLED_STORAGE_KEY = 'gemini-live-memory-enabled';
+const SCREEN_FORMAT_STORAGE_KEY = 'gemini-live-screen-format';
+const SCREEN_JPEG_QUALITY_STORAGE_KEY = 'gemini-live-screen-jpeg-quality';
+const SCREEN_RESOLUTION_STORAGE_KEY = 'gemini-live-screen-resolution';
+const IMAGE_ATTACHMENT_FORMAT_STORAGE_KEY = 'gemini-live-image-attachment-format';
+const IMAGE_ATTACHMENT_JPEG_QUALITY_STORAGE_KEY = 'gemini-live-image-attachment-jpeg-quality';
+const IMAGE_ATTACHMENT_MAX_DIMENSION_STORAGE_KEY = 'gemini-live-image-attachment-max-dimension';
+
+const SCREEN_FORMAT_LABELS: Record<ScreenFormat, string> = {
+  jpeg: 'JPEG (по умолчанию — легче по трафику)',
+  png: 'PNG (без потерь, идеально для текста)',
+};
+
+const SCREEN_JPEG_QUALITY_LABELS: Record<string, string> = {
+  '0.5': '0.5 — низкое',
+  '0.7': '0.7 — среднее (по умолчанию)',
+  '0.85': '0.85 — высокое',
+  '0.95': '0.95 — максимальное',
+};
+
+const SCREEN_RESOLUTION_LABELS: Record<ScreenResolution, string> = {
+  hd: '1280×720 — HD (по умолчанию)',
+  'full-hd': '1920×1080 — Full HD',
+  '2k': '2560×1440 — 2K',
+  native: 'Родное (без сжатия)',
+};
+
+const IMAGE_ATTACHMENT_FORMAT_LABELS: Record<ImageAttachmentFormat, string> = {
+  jpeg: 'JPEG (по умолчанию)',
+  png: 'PNG (без потерь)',
+};
+
+const IMAGE_ATTACHMENT_JPEG_QUALITY_LABELS: Record<string, string> = {
+  '0.5': '0.5 — низкое',
+  '0.7': '0.7 — среднее',
+  '0.85': '0.85 — высокое (по умолчанию)',
+  '0.95': '0.95 — максимальное',
+};
+
+const IMAGE_ATTACHMENT_MAX_DIMENSION_LABELS: Record<ImageAttachmentMaxDimension, string> = {
+  small: '640 px — экономно',
+  medium: '1280 px (по умолчанию)',
+  large: '1920 px — Full HD',
+  xl: '2560 px — 2K',
+  native: 'Родное (без сжатия)',
+};
 const STANDARD_PROMPT_PRESET_VALUE = '__standard__';
 const CUSTOM_PROMPT_PRESET_VALUE = '__custom__';
 
@@ -144,6 +215,12 @@ export function LiveConsole() {
   const [canShareScreen, setCanShareScreen] = useState(false);
   const [pendingAttachment, setPendingAttachment] = useState<PreparedImageAttachment | null>(null);
   const [attachmentError, setAttachmentError] = useState<string | null>(null);
+  const [screenFormat, setScreenFormat] = useState<ScreenFormat>(SCREEN_FORMAT_DEFAULT);
+  const [screenJpegQuality, setScreenJpegQuality] = useState<ScreenJpegQuality>(SCREEN_JPEG_QUALITY_DEFAULT);
+  const [screenResolution, setScreenResolution] = useState<ScreenResolution>(SCREEN_RESOLUTION_DEFAULT);
+  const [imageAttachmentFormat, setImageAttachmentFormat] = useState<ImageAttachmentFormat>(IMAGE_ATTACHMENT_FORMAT_DEFAULT);
+  const [imageAttachmentJpegQuality, setImageAttachmentJpegQuality] = useState<ImageAttachmentJpegQuality>(IMAGE_ATTACHMENT_JPEG_QUALITY_DEFAULT);
+  const [imageAttachmentMaxDimension, setImageAttachmentMaxDimension] = useState<ImageAttachmentMaxDimension>(IMAGE_ATTACHMENT_MAX_DIMENSION_DEFAULT);
   const [sessionExpiry, setSessionExpiry] = useState<string | null>(null);
   const [authMode, setAuthMode] = useState<AuthMode>('server-token');
   const [isBusy, setIsBusy] = useState(false);
@@ -444,6 +521,63 @@ export function LiveConsole() {
   useEffect(() => {
     window.localStorage.setItem(MEMORY_ENABLED_STORAGE_KEY, memoryEnabled ? 'true' : 'false');
   }, [memoryEnabled]);
+
+  // ---- Screen-share + image-attachment quality settings ----
+  // These all follow the same pattern: hydrate state from localStorage on
+  // mount, and persist back whenever the value changes.
+
+  useEffect(() => {
+    const saved = window.localStorage.getItem(SCREEN_FORMAT_STORAGE_KEY);
+    if (isScreenFormat(saved)) setScreenFormat(saved);
+  }, []);
+  useEffect(() => {
+    window.localStorage.setItem(SCREEN_FORMAT_STORAGE_KEY, screenFormat);
+  }, [screenFormat]);
+
+  useEffect(() => {
+    const saved = window.localStorage.getItem(SCREEN_JPEG_QUALITY_STORAGE_KEY);
+    const parsed = saved !== null ? parseFloat(saved) : NaN;
+    if (isScreenJpegQuality(parsed)) setScreenJpegQuality(parsed);
+  }, []);
+  useEffect(() => {
+    window.localStorage.setItem(SCREEN_JPEG_QUALITY_STORAGE_KEY, screenJpegQuality.toString());
+  }, [screenJpegQuality]);
+
+  useEffect(() => {
+    const saved = window.localStorage.getItem(SCREEN_RESOLUTION_STORAGE_KEY);
+    if (isScreenResolution(saved)) setScreenResolution(saved);
+  }, []);
+  useEffect(() => {
+    window.localStorage.setItem(SCREEN_RESOLUTION_STORAGE_KEY, screenResolution);
+  }, [screenResolution]);
+
+  useEffect(() => {
+    const saved = window.localStorage.getItem(IMAGE_ATTACHMENT_FORMAT_STORAGE_KEY);
+    if (isImageAttachmentFormat(saved)) setImageAttachmentFormat(saved);
+  }, []);
+  useEffect(() => {
+    window.localStorage.setItem(IMAGE_ATTACHMENT_FORMAT_STORAGE_KEY, imageAttachmentFormat);
+  }, [imageAttachmentFormat]);
+
+  useEffect(() => {
+    const saved = window.localStorage.getItem(IMAGE_ATTACHMENT_JPEG_QUALITY_STORAGE_KEY);
+    const parsed = saved !== null ? parseFloat(saved) : NaN;
+    if (isImageAttachmentJpegQuality(parsed)) setImageAttachmentJpegQuality(parsed);
+  }, []);
+  useEffect(() => {
+    window.localStorage.setItem(
+      IMAGE_ATTACHMENT_JPEG_QUALITY_STORAGE_KEY,
+      imageAttachmentJpegQuality.toString(),
+    );
+  }, [imageAttachmentJpegQuality]);
+
+  useEffect(() => {
+    const saved = window.localStorage.getItem(IMAGE_ATTACHMENT_MAX_DIMENSION_STORAGE_KEY);
+    if (isImageAttachmentMaxDimension(saved)) setImageAttachmentMaxDimension(saved);
+  }, []);
+  useEffect(() => {
+    window.localStorage.setItem(IMAGE_ATTACHMENT_MAX_DIMENSION_STORAGE_KEY, imageAttachmentMaxDimension);
+  }, [imageAttachmentMaxDimension]);
 
   useEffect(() => {
     const savedWebSearch = window.localStorage.getItem(WEB_SEARCH_STORAGE_KEY);
@@ -751,6 +885,11 @@ export function LiveConsole() {
       (frame, mimeType) => {
         clientRef.current?.sendVideo(frame, mimeType);
       },
+      {
+        format: screenFormat,
+        jpegQuality: screenJpegQuality,
+        resolution: screenResolution,
+      },
       () => {
         // User clicked browser's native «Stop sharing» button.
         screenRef.current?.stop(screenVideoRef.current);
@@ -760,8 +899,10 @@ export function LiveConsole() {
     );
 
     setIsScreenEnabled(true);
-    appendEvent('Трансляция экрана включена. Liv видит то, что вы показываете.');
-  }, [appendEvent, isCameraEnabled, stopCamera]);
+    appendEvent(
+      `Трансляция экрана включена (${screenFormat.toUpperCase()}, ${SCREEN_RESOLUTION_LABELS[screenResolution]}).`,
+    );
+  }, [appendEvent, isCameraEnabled, screenFormat, screenJpegQuality, screenResolution, stopCamera]);
 
   const handleToggleScreen = useCallback(async () => {
     setError(null);
@@ -1028,17 +1169,24 @@ export function LiveConsole() {
     setAttachmentError(null);
   }, [input, nextMessageId, pendingAttachment]);
 
-  const handleAttachmentPicked = useCallback(async (file: File) => {
-    setAttachmentError(null);
-    try {
-      const prepared = await prepareImageAttachment(file);
-      setPendingAttachment(prepared);
-    } catch (e) {
-      const message = e instanceof Error ? e.message : 'Не удалось прочитать картинку.';
-      setAttachmentError(message);
-      setPendingAttachment(null);
-    }
-  }, []);
+  const handleAttachmentPicked = useCallback(
+    async (file: File) => {
+      setAttachmentError(null);
+      try {
+        const prepared = await prepareImageAttachment(file, {
+          format: imageAttachmentFormat,
+          jpegQuality: imageAttachmentJpegQuality,
+          maxDimension: imageAttachmentMaxDimension,
+        });
+        setPendingAttachment(prepared);
+      } catch (e) {
+        const message = e instanceof Error ? e.message : 'Не удалось прочитать картинку.';
+        setAttachmentError(message);
+        setPendingAttachment(null);
+      }
+    },
+    [imageAttachmentFormat, imageAttachmentJpegQuality, imageAttachmentMaxDimension],
+  );
 
   const handleAttachmentInputChange = useCallback(
     async (event: ChangeEvent<HTMLInputElement>) => {
@@ -1758,6 +1906,127 @@ export function LiveConsole() {
                         >
                           Очистить память диалога
                         </button>
+                      </div>
+                      <div className="quality-section">
+                        <h3 className="quality-section-title">Трансляция экрана</h3>
+                        <p className="quality-section-hint">
+                          Если Liv путается с мелким текстом (например, в IDE) — поднимите разрешение и/или переключитесь на PNG.
+                        </p>
+                        <div className="quality-row">
+                          <label htmlFor="screen-format-select">Формат:</label>
+                          <select
+                            id="screen-format-select"
+                            value={screenFormat}
+                            onChange={(e) => {
+                              const v = e.target.value;
+                              if (isScreenFormat(v)) setScreenFormat(v);
+                            }}
+                          >
+                            {SCREEN_FORMATS.map((f) => (
+                              <option key={f} value={f}>
+                                {SCREEN_FORMAT_LABELS[f]}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                        {screenFormat === 'jpeg' ? (
+                          <div className="quality-row">
+                            <label htmlFor="screen-jpeg-quality-select">Качество JPEG:</label>
+                            <select
+                              id="screen-jpeg-quality-select"
+                              value={screenJpegQuality.toString()}
+                              onChange={(e) => {
+                                const parsed = parseFloat(e.target.value);
+                                if (isScreenJpegQuality(parsed)) setScreenJpegQuality(parsed);
+                              }}
+                            >
+                              {SCREEN_JPEG_QUALITIES.map((q) => (
+                                <option key={q} value={q.toString()}>
+                                  {SCREEN_JPEG_QUALITY_LABELS[q.toString()]}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                        ) : null}
+                        <div className="quality-row">
+                          <label htmlFor="screen-resolution-select">Разрешение:</label>
+                          <select
+                            id="screen-resolution-select"
+                            value={screenResolution}
+                            onChange={(e) => {
+                              const v = e.target.value;
+                              if (isScreenResolution(v)) setScreenResolution(v);
+                            }}
+                          >
+                            {SCREEN_RESOLUTIONS.map((r) => (
+                              <option key={r} value={r}>
+                                {SCREEN_RESOLUTION_LABELS[r]}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                        <p className="quality-section-note">
+                          Изменения применятся при следующем включении трансляции.
+                        </p>
+                      </div>
+                      <div className="quality-section">
+                        <h3 className="quality-section-title">Прикреплённые картинки</h3>
+                        <p className="quality-section-hint">
+                          Влияет на скрепку 📎. Чем выше разрешение — тем лучше Liv разбирает мелкий текст на скриншотах.
+                        </p>
+                        <div className="quality-row">
+                          <label htmlFor="image-format-select">Формат:</label>
+                          <select
+                            id="image-format-select"
+                            value={imageAttachmentFormat}
+                            onChange={(e) => {
+                              const v = e.target.value;
+                              if (isImageAttachmentFormat(v)) setImageAttachmentFormat(v);
+                            }}
+                          >
+                            {IMAGE_ATTACHMENT_FORMATS.map((f) => (
+                              <option key={f} value={f}>
+                                {IMAGE_ATTACHMENT_FORMAT_LABELS[f]}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                        {imageAttachmentFormat === 'jpeg' ? (
+                          <div className="quality-row">
+                            <label htmlFor="image-jpeg-quality-select">Качество JPEG:</label>
+                            <select
+                              id="image-jpeg-quality-select"
+                              value={imageAttachmentJpegQuality.toString()}
+                              onChange={(e) => {
+                                const parsed = parseFloat(e.target.value);
+                                if (isImageAttachmentJpegQuality(parsed)) setImageAttachmentJpegQuality(parsed);
+                              }}
+                            >
+                              {IMAGE_ATTACHMENT_JPEG_QUALITIES.map((q) => (
+                                <option key={q} value={q.toString()}>
+                                  {IMAGE_ATTACHMENT_JPEG_QUALITY_LABELS[q.toString()]}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                        ) : null}
+                        <div className="quality-row">
+                          <label htmlFor="image-max-dimension-select">Макс. сторона:</label>
+                          <select
+                            id="image-max-dimension-select"
+                            value={imageAttachmentMaxDimension}
+                            onChange={(e) => {
+                              const v = e.target.value;
+                              if (isImageAttachmentMaxDimension(v)) setImageAttachmentMaxDimension(v);
+                            }}
+                          >
+                            {IMAGE_ATTACHMENT_MAX_DIMENSIONS.map((d) => (
+                              <option key={d} value={d}>
+                                {IMAGE_ATTACHMENT_MAX_DIMENSION_LABELS[d]}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
                       </div>
                       <div className="api-key-panel">
                         <label className="api-key-label" htmlFor="gemini-api-key">

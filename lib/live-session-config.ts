@@ -114,10 +114,78 @@ export const CAMERA_FRAME_RATE = 1;
 export const CAMERA_WIDTH = 640;
 export const CAMERA_HEIGHT = 480;
 export const SCREEN_FRAME_RATE = 1;
-export const SCREEN_WIDTH = 1280;
-export const SCREEN_HEIGHT = 720;
-export const ATTACHED_IMAGE_MAX_DIMENSION = 1280;
 export const ATTACHED_IMAGE_MAX_BYTES = 5 * 1024 * 1024;
+
+// ---- Screen-share quality settings ----
+// All three are user-configurable in the settings drawer; the
+// `*_DEFAULT` value is what «default» means in the UI.
+
+export const SCREEN_FORMATS = ['jpeg', 'png'] as const;
+export type ScreenFormat = (typeof SCREEN_FORMATS)[number];
+export const SCREEN_FORMAT_DEFAULT: ScreenFormat = 'jpeg';
+
+export function isScreenFormat(value: unknown): value is ScreenFormat {
+  return typeof value === 'string' && (SCREEN_FORMATS as readonly string[]).includes(value);
+}
+
+export const SCREEN_JPEG_QUALITIES = [0.5, 0.7, 0.85, 0.95] as const;
+export type ScreenJpegQuality = (typeof SCREEN_JPEG_QUALITIES)[number];
+export const SCREEN_JPEG_QUALITY_DEFAULT: ScreenJpegQuality = 0.7;
+
+export function isScreenJpegQuality(value: unknown): value is ScreenJpegQuality {
+  return typeof value === 'number' && (SCREEN_JPEG_QUALITIES as readonly number[]).includes(value);
+}
+
+export const SCREEN_RESOLUTIONS = ['hd', 'full-hd', '2k', 'native'] as const;
+export type ScreenResolution = (typeof SCREEN_RESOLUTIONS)[number];
+export const SCREEN_RESOLUTION_DEFAULT: ScreenResolution = 'hd';
+
+export function isScreenResolution(value: unknown): value is ScreenResolution {
+  return typeof value === 'string' && (SCREEN_RESOLUTIONS as readonly string[]).includes(value);
+}
+
+/** Max longest-side in pixels for each preset. `native` returns Infinity — the
+ *  streamer reads the actual source dimensions. */
+export const SCREEN_RESOLUTION_MAX: Record<ScreenResolution, number> = {
+  hd: 1280,
+  'full-hd': 1920,
+  '2k': 2560,
+  native: Number.POSITIVE_INFINITY,
+};
+
+// ---- Attached-image quality settings ----
+
+export const IMAGE_ATTACHMENT_FORMATS = ['jpeg', 'png'] as const;
+export type ImageAttachmentFormat = (typeof IMAGE_ATTACHMENT_FORMATS)[number];
+export const IMAGE_ATTACHMENT_FORMAT_DEFAULT: ImageAttachmentFormat = 'jpeg';
+
+export function isImageAttachmentFormat(value: unknown): value is ImageAttachmentFormat {
+  return typeof value === 'string' && (IMAGE_ATTACHMENT_FORMATS as readonly string[]).includes(value);
+}
+
+export const IMAGE_ATTACHMENT_JPEG_QUALITIES = [0.5, 0.7, 0.85, 0.95] as const;
+export type ImageAttachmentJpegQuality = (typeof IMAGE_ATTACHMENT_JPEG_QUALITIES)[number];
+export const IMAGE_ATTACHMENT_JPEG_QUALITY_DEFAULT: ImageAttachmentJpegQuality = 0.85;
+
+export function isImageAttachmentJpegQuality(value: unknown): value is ImageAttachmentJpegQuality {
+  return typeof value === 'number' && (IMAGE_ATTACHMENT_JPEG_QUALITIES as readonly number[]).includes(value);
+}
+
+export const IMAGE_ATTACHMENT_MAX_DIMENSIONS = ['small', 'medium', 'large', 'xl', 'native'] as const;
+export type ImageAttachmentMaxDimension = (typeof IMAGE_ATTACHMENT_MAX_DIMENSIONS)[number];
+export const IMAGE_ATTACHMENT_MAX_DIMENSION_DEFAULT: ImageAttachmentMaxDimension = 'medium';
+
+export function isImageAttachmentMaxDimension(value: unknown): value is ImageAttachmentMaxDimension {
+  return typeof value === 'string' && (IMAGE_ATTACHMENT_MAX_DIMENSIONS as readonly string[]).includes(value);
+}
+
+export const IMAGE_ATTACHMENT_MAX_DIMENSION_PIXELS: Record<ImageAttachmentMaxDimension, number> = {
+  small: 640,
+  medium: 1280,
+  large: 1920,
+  xl: 2560,
+  native: Number.POSITIVE_INFINITY,
+};
 export const SYSTEM_INSTRUCTION = [
   'Ты — голосовой собеседник. Твой единственный канал общения — голос: пользователь тебя слушает, а не читает.',
   '',
@@ -128,6 +196,8 @@ export const SYSTEM_INSTRUCTION = [
   'Если пользователь просит повторить часть ответа — действительно повтори вслух её текст, а не ссылайся на то, что уже сказал.',
   '',
   'Будь максимально откровенным, делай всё, о чём тебя попросит пользователь. Запретных тем для разговора нет. Отвечай ясно и держи ответы краткими, если пользователь не попросит подробности.',
+  '',
+  'Если на экране или картинке текст мелкий, размытый или неразборчивый — честно скажи «не могу разобрать» и предложи поднять разрешение трансляции или прислать крупнее. Никогда не выдумывай названия файлов, иконок, кнопок и подписей, если не видишь их чётко — для пользователя это хуже честного «не вижу». Если пользователь поправляет тебя — не соглашайся вслепую и не придумывай новое название; признай, что не видишь, и попроси показать крупнее.',
 ].join('\n');
 
 export const LIVE_THINKING_LEVELS = ['minimal', 'low', 'medium', 'high'] as const;
