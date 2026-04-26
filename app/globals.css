@@ -778,6 +778,22 @@ input {
   font-size: 0.9rem;
 }
 
+.quality-row input[type='text'] {
+  width: 100%;
+  min-width: 0;
+  padding: 0.55rem 0.75rem;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--panel-strong);
+  color: var(--text);
+  font-size: 0.95rem;
+}
+
+.quality-row input[type='text']:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
 .quality-row select {
   width: 100%;
   min-width: 0;
