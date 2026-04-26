@@ -8,6 +8,7 @@ import { GeminiLiveClient } from '@/lib/client/gemini-live-client';
 import { MicrophoneRecorder } from '@/lib/client/microphone-recorder';
 import { ScreenStreamer, isScreenShareSupported } from '@/lib/client/screen-streamer';
 import { prepareImageAttachment, type PreparedImageAttachment } from '@/lib/client/image-attachment';
+import { useWakeLock } from '@/lib/client/use-wake-lock';
 import {
   IMAGE_ATTACHMENT_FORMAT_DEFAULT,
   IMAGE_ATTACHMENT_FORMATS,
@@ -89,6 +90,7 @@ const SYSTEM_INSTRUCTION_STORAGE_KEY = 'gemini-live-system-instruction';
 const SYSTEM_INSTRUCTION_PRESETS_STORAGE_KEY = 'gemini-live-system-instruction-presets';
 const MODEL_STORAGE_KEY = 'gemini-live-model';
 const MEMORY_ENABLED_STORAGE_KEY = 'gemini-live-memory-enabled';
+const WAKE_LOCK_ENABLED_STORAGE_KEY = 'gemini-live-wake-lock-enabled';
 const SCREEN_FORMAT_STORAGE_KEY = 'gemini-live-screen-format';
 const SCREEN_JPEG_QUALITY_STORAGE_KEY = 'gemini-live-screen-jpeg-quality';
 const SCREEN_MAX_LONGEST_SIDE_STORAGE_KEY = 'gemini-live-screen-max-longest-side';
@@ -223,6 +225,7 @@ export function LiveConsole() {
   const [model, setModel] = useState<LiveModelId>(LIVE_MODEL_DEFAULT);
   const [hasResumptionHandle, setHasResumptionHandle] = useState<boolean>(false);
   const [memoryEnabled, setMemoryEnabled] = useState<boolean>(true);
+  const wakeLock = useWakeLock(WAKE_LOCK_ENABLED_STORAGE_KEY);
   const [isSettingsOpen, setIsSettingsOpen] = useState<boolean>(false);
   const [activeSettingsSection, setActiveSettingsSection] = useState<'prompt' | 'model'>('prompt');
   const thinkingLevelSupported = modelSupportsThinkingLevel(model);
@@ -1390,6 +1393,45 @@ export function LiveConsole() {
           >
             <span aria-hidden="true">🧹</span>
           </button>
+          {wakeLock.supported ? (
+            <button
+              type="button"
+              className={`icon-button icon-button--wake-lock${wakeLock.enabled ? ' icon-button--on' : ''}`}
+              onClick={wakeLock.toggle}
+              aria-label={
+                wakeLock.enabled
+                  ? 'Не давать экрану засыпать (включено)'
+                  : 'Не давать экрану засыпать (выключено)'
+              }
+              aria-pressed={wakeLock.enabled}
+              title={
+                wakeLock.enabled
+                  ? wakeLock.active
+                    ? 'Экран не будет блокироваться, пока эта вкладка открыта.'
+                    : 'Включено, но сейчас не активно (вкладка не на переднем плане). Активируется, как только вернётесь.'
+                  : 'Не давать экрану засыпать. Полезно на телефоне, чтобы Liv не замолкал во время разговора.'
+              }
+            >
+              <span aria-hidden="true" className="icon-eye">
+                {wakeLock.enabled ? (
+                  // Open eye
+                  <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z" />
+                    <circle cx="12" cy="12" r="3" fill="currentColor" stroke="none" />
+                  </svg>
+                ) : (
+                  // Closed eye
+                  <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M3 13c1.5 1.7 4.5 4 9 4s7.5-2.3 9-4" />
+                    <path d="M3 9l2 3" />
+                    <path d="M21 9l-2 3" />
+                    <path d="M9 16l-1 2" />
+                    <path d="M15 16l1 2" />
+                  </svg>
+                )}
+              </span>
+            </button>
+          ) : null}
         </div>
 
         <div className="settings-trigger-row">

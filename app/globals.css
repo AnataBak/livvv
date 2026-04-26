@@ -132,12 +132,15 @@ input {
 }
 
 .icon-row {
-  display: grid;
-  /* Auto-fit so the row can hold either 4 or 5 buttons (the screen-share
-     toggle is conditionally rendered on desktop). */
-  grid-template-columns: repeat(auto-fit, minmax(3rem, 1fr));
+  display: flex;
+  flex-wrap: wrap;
   gap: 0.6rem;
   margin: 0.75rem 0;
+}
+
+.icon-row > .icon-button {
+  flex: 1 1 3rem;
+  min-width: 2.8rem;
 }
 
 .icon-button {
@@ -172,6 +175,17 @@ input {
 .icon-button--on {
   border-color: rgba(34, 197, 94, 0.7);
   box-shadow: inset 0 0 0 1px rgba(34, 197, 94, 0.25);
+}
+
+.icon-button--wake-lock .icon-eye {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #6b7280;
+}
+
+.icon-button--wake-lock.icon-button--on .icon-eye {
+  color: #15803d;
 }
 
 .icon-stack {
@@ -1093,13 +1107,21 @@ input {
 }
 
 .composer input {
-  flex: 1;
+  flex: 1 1 0;
+  min-width: 0;
   min-height: 3rem;
   padding: 0.85rem 1rem;
   border: 1px solid var(--line);
   border-radius: 18px;
   background: var(--panel-strong);
   color: var(--text);
+}
+
+.composer .primary-button {
+  flex: 0 1 auto;
+  min-width: 0;
+  padding-left: 0.9rem;
+  padding-right: 0.9rem;
 }
 
 .preview-frame {
