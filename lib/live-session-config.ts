@@ -113,6 +113,11 @@ export const AUDIO_OUTPUT_SAMPLE_RATE = 24000;
 export const CAMERA_FRAME_RATE = 1;
 export const CAMERA_WIDTH = 640;
 export const CAMERA_HEIGHT = 480;
+export const SCREEN_FRAME_RATE = 1;
+export const SCREEN_WIDTH = 1280;
+export const SCREEN_HEIGHT = 720;
+export const ATTACHED_IMAGE_MAX_DIMENSION = 1280;
+export const ATTACHED_IMAGE_MAX_BYTES = 5 * 1024 * 1024;
 export const SYSTEM_INSTRUCTION = [
   'Ты — голосовой собеседник. Твой единственный канал общения — голос: пользователь тебя слушает, а не читает.',
   '',
