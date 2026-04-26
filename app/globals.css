@@ -1107,13 +1107,21 @@ input {
 }
 
 .composer input {
-  flex: 1;
+  flex: 1 1 0;
+  min-width: 0;
   min-height: 3rem;
   padding: 0.85rem 1rem;
   border: 1px solid var(--line);
   border-radius: 18px;
   background: var(--panel-strong);
   color: var(--text);
+}
+
+.composer .primary-button {
+  flex: 0 1 auto;
+  min-width: 0;
+  padding-left: 0.9rem;
+  padding-right: 0.9rem;
 }
 
 .preview-frame {
