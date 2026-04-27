@@ -678,6 +678,140 @@ input {
   border-color: var(--accent);
 }
 
+.preset-bar {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  padding: 0.7rem 0.8rem;
+  margin-bottom: 0.85rem;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--panel-strong);
+}
+
+.preset-bar-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.preset-bar-row--main .preset-bar-label {
+  font-size: 0.9rem;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.preset-bar-select {
+  flex: 1 1 12rem;
+  min-width: 0;
+  padding: 0.45rem 0.65rem;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel);
+  color: var(--text);
+  font-size: 0.95rem;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.preset-bar-select:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.preset-bar-hint {
+  margin: 0;
+  font-size: 0.78rem;
+  line-height: 1.35;
+  color: var(--muted);
+}
+
+.preset-bar-name-input {
+  flex: 1 1 14rem;
+  min-width: 0;
+  padding: 0.45rem 0.65rem;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel);
+  color: var(--text);
+  font-size: 0.9rem;
+}
+
+.preset-bar-name-input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.preset-bar-delete {
+  margin-left: auto;
+}
+
+.preset-bar-share--copied,
+.preset-bar-share--copied:hover {
+  border-color: color-mix(in srgb, #4ade80 60%, var(--line));
+  background: color-mix(in srgb, #4ade80 18%, var(--panel));
+  color: #4ade80;
+}
+
+.preset-import-drawer {
+  max-width: 36rem;
+}
+
+.preset-import-body {
+  gap: 0.75rem;
+  display: flex;
+  flex-direction: column;
+}
+
+.preset-import-hint {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--muted);
+  line-height: 1.4;
+}
+
+.preset-import-textarea {
+  width: 100%;
+  padding: 0.6rem 0.7rem;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--panel);
+  color: var(--text);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.85rem;
+  line-height: 1.4;
+  resize: vertical;
+  min-height: 7rem;
+}
+
+.preset-import-textarea:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.preset-import-error {
+  margin: 0;
+  padding: 0.5rem 0.7rem;
+  border-radius: 10px;
+  background: color-mix(in srgb, #ff5b5b 18%, transparent);
+  color: #ff8a8a;
+  font-size: 0.85rem;
+  line-height: 1.35;
+}
+
+.preset-import-actions {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+@media (max-width: 540px) {
+  .preset-bar-delete {
+    margin-left: 0;
+  }
+}
+
 .memory-section {
   padding: 0.9rem 1rem;
   border: 1px solid var(--line);
