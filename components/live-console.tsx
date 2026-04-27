@@ -1556,11 +1556,30 @@ export function LiveConsole() {
         </div>
 
         <div className="console-panel transcript-panel">
-          <div className="panel-header">
+          <div className="panel-header panel-header--row">
             <div>
               <p className="eyebrow">Диалог</p>
               <h3>Живая расшифровка</h3>
             </div>
+            {messages.length > 0 && (
+              <button
+                type="button"
+                className="copy-button copy-all-button"
+                onClick={() => {
+                  const fullText = messages
+                    .map((m) => {
+                      const label = m.role === 'assistant' ? 'Gemini' : m.role === 'user' ? 'Вы' : 'Система';
+                      return `${label}: ${m.text}`;
+                    })
+                    .join('\n\n');
+                  void navigator.clipboard.writeText(fullText);
+                }}
+                aria-label="Копировать весь диалог"
+                title="Копировать весь диалог"
+              >
+                <span aria-hidden="true">📋</span> Копировать всё
+              </button>
+            )}
           </div>
 
           <div
@@ -1582,6 +1601,17 @@ export function LiveConsole() {
             ) : (
               messages.map((message) => (
                 <article key={message.id} className={`message-bubble ${message.role}`}>
+                  <button
+                    type="button"
+                    className="copy-button copy-message-button"
+                    onClick={() => {
+                      void navigator.clipboard.writeText(message.text);
+                    }}
+                    aria-label="Копировать сообщение"
+                    title="Копировать сообщение"
+                  >
+                    <span aria-hidden="true">📋</span>
+                  </button>
                   <span className="message-role">
                     {message.role === 'assistant'
                       ? 'Gemini'
