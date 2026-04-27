@@ -53,6 +53,20 @@ import {
   type LiveModelId,
   type LiveThinkingLevel,
 } from '@/lib/live-session-config';
+import {
+  DEFAULT_PRESET_SETTINGS,
+  STANDARD_PRESET_VALUE,
+  decodePresetShareString,
+  encodePresetShareString,
+  makeUniquePresetName,
+  presetSettingsEqual,
+  readActivePresetName,
+  readPresets,
+  writeActivePresetName,
+  writePresets,
+  type PresetSettings,
+  type PresetV1,
+} from '@/lib/client/presets';
 
 type ChatMessage = {
   id: string;
@@ -87,7 +101,6 @@ const THINKING_LEVEL_STORAGE_KEY = 'gemini-live-thinking-level';
 const RESUMPTION_HANDLE_STORAGE_KEY = 'gemini-live-session-handle';
 const RESUMPTION_HANDLE_MODEL_STORAGE_KEY = 'gemini-live-session-handle-model';
 const SYSTEM_INSTRUCTION_STORAGE_KEY = 'gemini-live-system-instruction';
-const SYSTEM_INSTRUCTION_PRESETS_STORAGE_KEY = 'gemini-live-system-instruction-presets';
 const MODEL_STORAGE_KEY = 'gemini-live-model';
 const MEMORY_ENABLED_STORAGE_KEY = 'gemini-live-memory-enabled';
 const WAKE_LOCK_ENABLED_STORAGE_KEY = 'gemini-live-wake-lock-enabled';
@@ -124,42 +137,6 @@ function sliderToMaxLongestSide(slider: number, nativeSliderValue: number): numb
 
 function formatJpegQuality(value: number): string {
   return value.toFixed(2);
-}
-const STANDARD_PROMPT_PRESET_VALUE = '__standard__';
-const CUSTOM_PROMPT_PRESET_VALUE = '__custom__';
-
-type SystemInstructionPreset = { name: string; text: string };
-
-function readPresets(): SystemInstructionPreset[] {
-  try {
-    const raw = window.localStorage.getItem(SYSTEM_INSTRUCTION_PRESETS_STORAGE_KEY);
-    if (!raw) return [];
-    const parsed = JSON.parse(raw) as unknown;
-    if (!Array.isArray(parsed)) return [];
-    return parsed
-      .filter(
-        (p): p is SystemInstructionPreset =>
-          typeof p === 'object' &&
-          p !== null &&
-          typeof (p as { name?: unknown }).name === 'string' &&
-          typeof (p as { text?: unknown }).text === 'string',
-      )
-      .map((p) => ({ name: p.name.trim(), text: p.text }))
-      .filter((p) => p.name.length > 0);
-  } catch {
-    return [];
-  }
-}
-
-function writePresets(presets: SystemInstructionPreset[]) {
-  try {
-    window.localStorage.setItem(
-      SYSTEM_INSTRUCTION_PRESETS_STORAGE_KEY,
-      JSON.stringify(presets),
-    );
-  } catch {
-    // localStorage may be full or disabled; ignore.
-  }
 }
 const THINKING_LEVEL_LABELS: Record<LiveThinkingLevel, string> = {
   minimal: 'Минимальные (по умолчанию)',
@@ -222,8 +199,12 @@ export function LiveConsole() {
   const [webSearchEnabled, setWebSearchEnabled] = useState<boolean>(LIVE_WEB_SEARCH_ENABLED);
   const [thinkingLevel, setThinkingLevel] = useState<LiveThinkingLevel>(LIVE_THINKING_LEVEL_DEFAULT);
   const [systemInstruction, setSystemInstruction] = useState<string>(SYSTEM_INSTRUCTION);
-  const [promptPresets, setPromptPresets] = useState<SystemInstructionPreset[]>([]);
+  const [presets, setPresets] = useState<PresetV1[]>([]);
+  const [activePresetName, setActivePresetName] = useState<string | null>(null);
   const [newPresetName, setNewPresetName] = useState<string>('');
+  const [isImportOpen, setIsImportOpen] = useState<boolean>(false);
+  const [importText, setImportText] = useState<string>('');
+  const [importError, setImportError] = useState<string | null>(null);
   const [model, setModel] = useState<LiveModelId>(LIVE_MODEL_DEFAULT);
   const [hasResumptionHandle, setHasResumptionHandle] = useState<boolean>(false);
   const [memoryEnabled, setMemoryEnabled] = useState<boolean>(true);
@@ -710,8 +691,25 @@ export function LiveConsole() {
     appendEvent('Промт сброшен к стандартному. Применится при следующем запуске сессии.');
   }, [appendEvent]);
 
+  // Load saved presets and the previously-active preset name on mount. The
+  // working copy of settings (temperature, voice, …) is restored separately
+  // from each setting's own localStorage key — that's how a tab reload keeps
+  // your in-progress edits even though they aren't saved into the preset.
   useEffect(() => {
-    setPromptPresets(readPresets());
+    setPresets(readPresets());
+    setActivePresetName(readActivePresetName());
+  }, []);
+
+  /** Apply a preset's settings into the working state. Pure setter calls —
+   *  the "active preset name" is updated separately by the callers below. */
+  const applyPresetSettings = useCallback((settings: PresetSettings) => {
+    setSystemInstruction(settings.systemInstruction);
+    setModel(settings.model);
+    setTemperature(settings.temperature);
+    setVoice(settings.voice);
+    setLanguage(settings.language);
+    setWebSearchEnabled(settings.webSearchEnabled);
+    setThinkingLevel(settings.thinkingLevel);
   }, []);
 
   const [isPortalReady, setIsPortalReady] = useState(false);
@@ -742,15 +740,90 @@ export function LiveConsole() {
     }
   }, [isCameraEnabled, isCameraFloating, cameraStreamVersion]);
 
-  const savePromptPreset = useCallback(() => {
+  // The current "working copy" of preset settings — what the UI actually
+  // shows. Compared against the saved preset to decide if there are
+  // unsaved edits ("modified •").
+  const currentSettings: PresetSettings = {
+    systemInstruction,
+    model,
+    temperature,
+    voice,
+    language,
+    webSearchEnabled,
+    thinkingLevel,
+  };
+
+  const activePreset =
+    activePresetName === null ? null : presets.find((p) => p.name === activePresetName) ?? null;
+
+  // Compare working copy to whatever is "saved" right now: either the
+  // active preset's stored values, or the standard defaults when no preset
+  // is selected. If they differ we render the "•" indicator and enable the
+  // "Update preset" button.
+  const baselineSettings: PresetSettings = activePreset
+    ? {
+        systemInstruction: activePreset.systemInstruction,
+        model: activePreset.model,
+        temperature: activePreset.temperature,
+        voice: activePreset.voice,
+        language: activePreset.language,
+        webSearchEnabled: activePreset.webSearchEnabled,
+        thinkingLevel: activePreset.thinkingLevel,
+      }
+    : DEFAULT_PRESET_SETTINGS;
+  const isDirty = !presetSettingsEqual(currentSettings, baselineSettings);
+
+  const persistActivePresetName = useCallback((name: string | null) => {
+    setActivePresetName(name);
+    writeActivePresetName(name);
+  }, []);
+
+  /** Standard ("plain Liv") preset = built-in defaults, no saved name. */
+  const loadStandardPreset = useCallback(() => {
+    applyPresetSettings(DEFAULT_PRESET_SETTINGS);
+    persistActivePresetName(null);
+    appendEvent('Загружены стандартные настройки. Применятся при следующем запуске сессии.');
+  }, [appendEvent, applyPresetSettings, persistActivePresetName]);
+
+  const loadPresetByName = useCallback(
+    (name: string) => {
+      const preset = presets.find((p) => p.name === name);
+      if (!preset) return;
+      applyPresetSettings({
+        systemInstruction: preset.systemInstruction,
+        model: preset.model,
+        temperature: preset.temperature,
+        voice: preset.voice,
+        language: preset.language,
+        webSearchEnabled: preset.webSearchEnabled,
+        thinkingLevel: preset.thinkingLevel,
+      });
+      persistActivePresetName(name);
+      appendEvent(`Загружен пресет «${name}». Применится при следующем запуске сессии.`);
+    },
+    [appendEvent, applyPresetSettings, persistActivePresetName, presets],
+  );
+
+  const applySelectedPresetValue = useCallback(
+    (value: string) => {
+      if (value === STANDARD_PRESET_VALUE) {
+        loadStandardPreset();
+        return;
+      }
+      loadPresetByName(value);
+    },
+    [loadPresetByName, loadStandardPreset],
+  );
+
+  const saveAsNewPreset = useCallback(() => {
     const name = newPresetName.trim();
     if (!name) {
       appendEvent('Введи имя пресета перед сохранением.');
       return;
     }
-    setPromptPresets((current) => {
+    setPresets((current) => {
       const existingIndex = current.findIndex((p) => p.name === name);
-      const next: SystemInstructionPreset = { name, text: systemInstruction };
+      const next: PresetV1 = { v: 1, name, ...currentSettings };
       const updated =
         existingIndex >= 0
           ? current.map((p, i) => (i === existingIndex ? next : p))
@@ -758,50 +831,107 @@ export function LiveConsole() {
       writePresets(updated);
       return updated;
     });
+    persistActivePresetName(name);
     setNewPresetName('');
     appendEvent(`Пресет «${name}» сохранён.`);
-  }, [appendEvent, newPresetName, systemInstruction]);
+  }, [appendEvent, currentSettings, newPresetName, persistActivePresetName]);
 
-  const loadPromptPreset = useCallback(
-    (preset: SystemInstructionPreset) => {
-      setSystemInstruction(preset.text);
-      appendEvent(`Загружен пресет «${preset.name}». Применится при следующем запуске сессии.`);
-    },
-    [appendEvent],
-  );
+  const updateCurrentPreset = useCallback(() => {
+    if (activePresetName === null) return;
+    const name = activePresetName;
+    setPresets((current) => {
+      const idx = current.findIndex((p) => p.name === name);
+      if (idx < 0) return current;
+      const next: PresetV1 = { v: 1, name, ...currentSettings };
+      const updated = current.map((p, i) => (i === idx ? next : p));
+      writePresets(updated);
+      return updated;
+    });
+    appendEvent(`Пресет «${name}» обновлён текущими настройками.`);
+  }, [activePresetName, appendEvent, currentSettings]);
 
-  const deletePromptPreset = useCallback(
-    (name: string) => {
-      setPromptPresets((current) => {
-        const updated = current.filter((p) => p.name !== name);
-        writePresets(updated);
-        return updated;
-      });
-      appendEvent(`Пресет «${name}» удалён.`);
-    },
-    [appendEvent],
-  );
+  const deleteCurrentPreset = useCallback(() => {
+    if (activePresetName === null) return;
+    const name = activePresetName;
+    setPresets((current) => {
+      const updated = current.filter((p) => p.name !== name);
+      writePresets(updated);
+      return updated;
+    });
+    // Drop the active selection but keep the working copy as-is — the user
+    // hasn't asked to lose their current values, only the saved slot.
+    persistActivePresetName(null);
+    appendEvent(`Пресет «${name}» удалён.`);
+  }, [activePresetName, appendEvent, persistActivePresetName]);
 
-  const currentPromptPreset = promptPresets.find((preset) => preset.text === systemInstruction) ?? null;
-  const currentPromptPresetValue =
-    systemInstruction === SYSTEM_INSTRUCTION
-      ? STANDARD_PROMPT_PRESET_VALUE
-      : currentPromptPreset?.name ?? CUSTOM_PROMPT_PRESET_VALUE;
-
-  const applySelectedPromptPreset = useCallback(
-    (value: string) => {
-      if (value === STANDARD_PROMPT_PRESET_VALUE) {
-        resetSystemInstruction();
+  const sharePreset = useCallback(async () => {
+    if (!activePreset) {
+      appendEvent('Нечего шарить — сначала выбери или сохрани пресет.');
+      return;
+    }
+    // Re-encode from the saved snapshot, not from the dirty working copy —
+    // so receivers get the same preset that's saved on this device, and
+    // any unsaved local edits stay local.
+    const encoded = encodePresetShareString(activePreset);
+    try {
+      if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(encoded);
+        appendEvent(`Пресет «${activePreset.name}» скопирован в буфер обмена.`);
         return;
       }
+      // No async clipboard API (rare, e.g. http on iOS) — fall back to
+      // showing the string in the import dialog so the user can copy it.
+      throw new Error('clipboard unavailable');
+    } catch {
+      setImportText(encoded);
+      setImportError(null);
+      setIsImportOpen(true);
+      appendEvent(
+        'Не удалось скопировать автоматически — строка пресета показана ниже, скопируй вручную.',
+      );
+    }
+  }, [activePreset, appendEvent]);
 
-      const preset = promptPresets.find((item) => item.name === value);
-      if (preset) {
-        loadPromptPreset(preset);
-      }
-    },
-    [loadPromptPreset, promptPresets, resetSystemInstruction],
-  );
+  const handleImportPaste = useCallback(() => {
+    const result = decodePresetShareString(importText);
+    if (!result.ok) {
+      setImportError(result.error);
+      return;
+    }
+    const decoded = result.preset;
+    let chosenName = decoded.name;
+    setPresets((current) => {
+      chosenName = makeUniquePresetName(decoded.name, current);
+      const next: PresetV1 = { ...decoded, name: chosenName };
+      const updated = [...current, next];
+      writePresets(updated);
+      return updated;
+    });
+    // Apply the imported preset right away — that's what makes the
+    // "share to another device" flow feel like one click.
+    applyPresetSettings({
+      systemInstruction: decoded.systemInstruction,
+      model: decoded.model,
+      temperature: decoded.temperature,
+      voice: decoded.voice,
+      language: decoded.language,
+      webSearchEnabled: decoded.webSearchEnabled,
+      thinkingLevel: decoded.thinkingLevel,
+    });
+    persistActivePresetName(chosenName);
+    setImportText('');
+    setImportError(null);
+    setIsImportOpen(false);
+    if (chosenName === decoded.name) {
+      appendEvent(`Импортирован пресет «${chosenName}» и применён.`);
+    } else {
+      appendEvent(
+        `Уже есть пресет с именем «${decoded.name}» — импортирован как «${chosenName}» и применён.`,
+      );
+    }
+  }, [appendEvent, applyPresetSettings, importText, persistActivePresetName]);
+
+  const dropdownPresetValue = activePresetName === null ? STANDARD_PRESET_VALUE : activePresetName;
 
   const dropStoredResumptionHandle = useCallback(() => {
     resumptionHandleRef.current = null;
@@ -1312,19 +1442,18 @@ export function LiveConsole() {
         <div className="preset-loader-row">
           <select
             className="prompt-presets-select preset-loader-select"
-            value={currentPromptPresetValue}
+            value={dropdownPresetValue}
             onChange={(event) => {
-              applySelectedPromptPreset(event.target.value);
+              applySelectedPresetValue(event.target.value);
             }}
-            aria-label="Загрузить пресет промта"
+            aria-label="Загрузить пресет"
           >
-            <option value={STANDARD_PROMPT_PRESET_VALUE}>Стандартный</option>
-            {currentPromptPresetValue === CUSTOM_PROMPT_PRESET_VALUE ? (
-              <option value={CUSTOM_PROMPT_PRESET_VALUE}>Текущий промт</option>
-            ) : null}
-            {promptPresets.map((preset) => (
+            <option value={STANDARD_PRESET_VALUE}>
+              {`Стандартный${activePresetName === null && isDirty ? ' •' : ''}`}
+            </option>
+            {presets.map((preset) => (
               <option key={preset.name} value={preset.name}>
-                {preset.name}
+                {`${preset.name}${preset.name === activePresetName && isDirty ? ' •' : ''}`}
               </option>
             ))}
           </select>
@@ -1804,6 +1933,113 @@ export function LiveConsole() {
                   </button>
                 </header>
                 <div className="settings-drawer-body">
+                  <div className="preset-bar" role="group" aria-label="Управление пресетами">
+                    <div className="preset-bar-row preset-bar-row--main">
+                      <label className="preset-bar-label" htmlFor="preset-bar-select">
+                        Пресет:
+                      </label>
+                      <select
+                        id="preset-bar-select"
+                        className="preset-bar-select"
+                        value={dropdownPresetValue}
+                        onChange={(event) => applySelectedPresetValue(event.target.value)}
+                      >
+                        <option value={STANDARD_PRESET_VALUE}>
+                          {`Стандартный${activePresetName === null && isDirty ? ' • (изменён)' : ''}`}
+                        </option>
+                        {presets.map((preset) => (
+                          <option key={preset.name} value={preset.name}>
+                            {`${preset.name}${preset.name === activePresetName && isDirty ? ' • (изменён)' : ''}`}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <p className="preset-bar-hint">
+                      Пресет хранит промт + настройки модели. Меняй поля как угодно — пресет на
+                      диске не тронется, пока не нажмёшь «Обновить» или «Сохранить как новый».
+                      При переключении на другой пресет правки сбрасываются.
+                    </p>
+                    <div className="preset-bar-row preset-bar-row--save">
+                      <input
+                        type="text"
+                        className="preset-bar-name-input"
+                        placeholder="Имя нового пресета (например: режиссёр)"
+                        value={newPresetName}
+                        onChange={(event) => setNewPresetName(event.target.value)}
+                        onKeyDown={(event) => {
+                          if (event.key === 'Enter') {
+                            event.preventDefault();
+                            saveAsNewPreset();
+                          }
+                        }}
+                        aria-label="Имя нового пресета"
+                      />
+                      <button
+                        type="button"
+                        className="secondary-button"
+                        onClick={saveAsNewPreset}
+                        disabled={newPresetName.trim().length === 0}
+                        title="Сохранить текущие настройки и промт как новый пресет"
+                      >
+                        Сохранить как новый
+                      </button>
+                      <button
+                        type="button"
+                        className="secondary-button"
+                        onClick={updateCurrentPreset}
+                        disabled={activePresetName === null || !isDirty}
+                        title={
+                          activePresetName === null
+                            ? 'Сначала выбери или сохрани пресет'
+                            : isDirty
+                              ? `Перезаписать пресет «${activePresetName}» текущими настройками`
+                              : 'В выбранном пресете нет несохранённых правок'
+                        }
+                      >
+                        {activePresetName ? `Обновить «${activePresetName}»` : 'Обновить пресет'}
+                      </button>
+                    </div>
+                    <div className="preset-bar-row preset-bar-row--actions">
+                      <button
+                        type="button"
+                        className="secondary-button"
+                        onClick={() => void sharePreset()}
+                        disabled={activePresetName === null}
+                        title={
+                          activePresetName === null
+                            ? 'Чтобы поделиться — сначала выбери пресет'
+                            : 'Скопировать пресет одной строкой в буфер обмена'
+                        }
+                      >
+                        Поделиться (скопировать)
+                      </button>
+                      <button
+                        type="button"
+                        className="secondary-button"
+                        onClick={() => {
+                          setImportText('');
+                          setImportError(null);
+                          setIsImportOpen(true);
+                        }}
+                        title="Вставить строку пресета с другого устройства"
+                      >
+                        Импортировать
+                      </button>
+                      <button
+                        type="button"
+                        className="secondary-button preset-bar-delete"
+                        onClick={deleteCurrentPreset}
+                        disabled={activePresetName === null}
+                        title={
+                          activePresetName === null
+                            ? 'Удалить можно только сохранённый пресет'
+                            : `Удалить пресет «${activePresetName}»`
+                        }
+                      >
+                        Удалить
+                      </button>
+                    </div>
+                  </div>
                   <div className="settings-tabs" role="tablist" aria-label="Разделы настроек">
                     <button
                       type="button"
@@ -1847,71 +2083,6 @@ export function LiveConsole() {
                         <p className="system-instruction-note">
                           Сохраняется в браузере. Применится при следующем запуске сессии.
                         </p>
-                      </div>
-                      <div className="prompt-presets">
-                        <div className="prompt-presets-header">Пресеты промта:</div>
-                        <div className="prompt-presets-select-row">
-                          <select
-                            className="prompt-presets-select"
-                            value={currentPromptPresetValue}
-                            onChange={(event) => {
-                              applySelectedPromptPreset(event.target.value);
-                            }}
-                          >
-                            <option value={STANDARD_PROMPT_PRESET_VALUE}>Стандартный</option>
-                            {currentPromptPresetValue === CUSTOM_PROMPT_PRESET_VALUE ? (
-                              <option value={CUSTOM_PROMPT_PRESET_VALUE}>Текущий промт</option>
-                            ) : null}
-                            {promptPresets.map((preset) => (
-                              <option key={preset.name} value={preset.name}>
-                                {preset.name}
-                              </option>
-                            ))}
-                          </select>
-                          <select
-                            className="prompt-presets-select prompt-presets-delete-select"
-                            value=""
-                            onChange={(event) => {
-                              const name = event.target.value;
-                              if (!name) return;
-                              deletePromptPreset(name);
-                              event.target.value = '';
-                            }}
-                            disabled={promptPresets.length === 0}
-                            aria-label="Удалить пресет"
-                            title="Удалить пресет"
-                          >
-                            <option value="">Удалить…</option>
-                            {promptPresets.map((preset) => (
-                              <option key={preset.name} value={preset.name}>
-                                {preset.name}
-                              </option>
-                            ))}
-                          </select>
-                        </div>
-                        <div className="prompt-presets-save">
-                          <input
-                            type="text"
-                            className="prompt-preset-name-input"
-                            placeholder="Имя пресета (например: режиссёр)"
-                            value={newPresetName}
-                            onChange={(event) => setNewPresetName(event.target.value)}
-                            onKeyDown={(event) => {
-                              if (event.key === 'Enter') {
-                                event.preventDefault();
-                                savePromptPreset();
-                              }
-                            }}
-                          />
-                          <button
-                            type="button"
-                            className="secondary-button"
-                            onClick={savePromptPreset}
-                            disabled={newPresetName.trim().length === 0}
-                          >
-                            Сохранить как пресет
-                          </button>
-                        </div>
                       </div>
                       </div>
                     ) : null}
@@ -2265,6 +2436,75 @@ export function LiveConsole() {
                 </div>
               </div>
             </div>
+            </div>,
+            document.body,
+          )
+        : null}
+
+      {isPortalReady && isImportOpen
+        ? createPortal(
+            <div
+              className="settings-drawer-backdrop"
+              role="presentation"
+              onClick={() => setIsImportOpen(false)}
+            >
+              <div
+                className="settings-drawer preset-import-drawer"
+                role="dialog"
+                aria-modal="true"
+                aria-label="Импорт пресета"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <header className="settings-drawer-header">
+                  <h3>Импорт пресета</h3>
+                  <button
+                    type="button"
+                    className="settings-drawer-close"
+                    onClick={() => setIsImportOpen(false)}
+                    aria-label="Закрыть"
+                  >
+                    ×
+                  </button>
+                </header>
+                <div className="settings-drawer-body preset-import-body">
+                  <p className="preset-import-hint">
+                    Вставь сюда строку, которую скопировала кнопкой «Поделиться» на другом
+                    устройстве. Она начинается с «livvv:preset:v1:» и содержит промт + все
+                    настройки модели.
+                  </p>
+                  <textarea
+                    className="preset-import-textarea"
+                    rows={6}
+                    value={importText}
+                    onChange={(event) => {
+                      setImportText(event.target.value);
+                      if (importError) setImportError(null);
+                    }}
+                    placeholder="livvv:preset:v1:..."
+                    autoFocus
+                  />
+                  {importError ? (
+                    <p className="preset-import-error">{importError}</p>
+                  ) : null}
+                  <div className="preset-import-actions">
+                    <button
+                      type="button"
+                      className="primary-button"
+                      onClick={handleImportPaste}
+                      disabled={importText.trim().length === 0}
+                    >
+                      Импортировать и применить
+                    </button>
+                    <button
+                      type="button"
+                      className="secondary-button"
+                      onClick={() => setIsImportOpen(false)}
+                    >
+                      Отмена
+                    </button>
+                  </div>
+                </div>
+              </div>
             </div>,
             document.body,
           )
