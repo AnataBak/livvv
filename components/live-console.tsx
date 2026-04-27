@@ -686,11 +686,6 @@ export function LiveConsole() {
     }
   }, [systemInstruction]);
 
-  const resetSystemInstruction = useCallback(() => {
-    setSystemInstruction(SYSTEM_INSTRUCTION);
-    appendEvent('Промт сброшен к стандартному. Применится при следующем запуске сессии.');
-  }, [appendEvent]);
-
   // Load saved presets and the previously-active preset name on mount. The
   // working copy of settings (temperature, voice, …) is restored separately
   // from each setting's own localStorage key — that's how a tab reload keeps
@@ -2075,13 +2070,15 @@ export function LiveConsole() {
                         <button
                           type="button"
                           className="secondary-button"
-                          onClick={resetSystemInstruction}
-                          disabled={systemInstruction === SYSTEM_INSTRUCTION}
+                          onClick={loadStandardPreset}
+                          disabled={activePresetName === null && !isDirty}
+                          title="Сбросить промт И настройки модели к свежим дефолтам — как будто только что открыла приложение"
                         >
                           Сбросить к стандартному
                         </button>
                         <p className="system-instruction-note">
-                          Сохраняется в браузере. Применится при следующем запуске сессии.
+                          Сбрасывает промт И настройки модели (температура, голос, язык, web-search,
+                          thinking) к дефолтам. Применится при следующем запуске сессии.
                         </p>
                       </div>
                       </div>
