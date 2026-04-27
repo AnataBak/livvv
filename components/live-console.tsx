@@ -223,6 +223,7 @@ export function LiveConsole() {
   const wakeLock = useWakeLock(WAKE_LOCK_ENABLED_STORAGE_KEY);
   const [isSettingsOpen, setIsSettingsOpen] = useState<boolean>(false);
   const [activeSettingsSection, setActiveSettingsSection] = useState<'prompt' | 'model'>('prompt');
+  const [isPresetActionsOpen, setIsPresetActionsOpen] = useState<boolean>(false);
   const thinkingLevelSupported = modelSupportsThinkingLevel(model);
   const resumptionHandleRef = useRef<string | null>(null);
   const modelRef = useRef<LiveModelId>(model);
@@ -1962,7 +1963,11 @@ export function LiveConsole() {
                   </button>
                 </header>
                 <div className="settings-drawer-body">
-                  <div className="preset-bar" role="group" aria-label="Управление пресетами">
+                  <div
+                    className={`preset-bar${isPresetActionsOpen ? ' preset-bar--expanded' : ''}`}
+                    role="group"
+                    aria-label="Управление пресетами"
+                  >
                     <div className="preset-bar-row preset-bar-row--main">
                       <label className="preset-bar-label" htmlFor="preset-bar-select">
                         Пресет:
@@ -1982,7 +1987,21 @@ export function LiveConsole() {
                           </option>
                         ))}
                       </select>
+                      <button
+                        type="button"
+                        className="preset-bar-toggle"
+                        onClick={() => setIsPresetActionsOpen((v) => !v)}
+                        aria-expanded={isPresetActionsOpen}
+                        aria-controls="preset-bar-extra"
+                        aria-label={isPresetActionsOpen ? 'Скрыть действия с пресетом' : 'Показать действия с пресетом'}
+                        title={isPresetActionsOpen ? 'Скрыть действия с пресетом' : 'Сохранить / обновить / поделиться / импорт / удалить'}
+                      >
+                        <span className="preset-bar-toggle-label">Действия</span>
+                        <span className="preset-bar-toggle-chevron" aria-hidden="true">▾</span>
+                      </button>
                     </div>
+                    {isPresetActionsOpen ? (
+                    <div id="preset-bar-extra" className="preset-bar-extra">
                     <p className="preset-bar-hint">
                       Пресет хранит промт + настройки модели. Меняй поля как угодно — пресет на
                       диске не тронется, пока не нажмёшь «Обновить» или «Сохранить как новый».
@@ -2069,6 +2088,8 @@ export function LiveConsole() {
                         Удалить
                       </button>
                     </div>
+                    </div>
+                    ) : null}
                   </div>
                   <div className="settings-tabs" role="tablist" aria-label="Разделы настроек">
                     <button
