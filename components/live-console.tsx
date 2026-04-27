@@ -258,6 +258,8 @@ export function LiveConsole() {
   });
   const messageCounterRef = useRef(0);
   const eventCounterRef = useRef(0);
+  const messageListRef = useRef<HTMLDivElement | null>(null);
+  const isStuckToBottomRef = useRef(true);
 
   const appendEvent = useCallback((message: string) => {
     eventCounterRef.current += 1;
@@ -469,6 +471,13 @@ export function LiveConsole() {
   },
   [],
 );
+
+  useEffect(() => {
+    const el = messageListRef.current;
+    if (el && isStuckToBottomRef.current) {
+      el.scrollTop = el.scrollHeight;
+    }
+  }, [messages]);
 
   useEffect(() => {
     const savedKey = window.localStorage.getItem(API_KEY_STORAGE_KEY);
@@ -1554,7 +1563,18 @@ export function LiveConsole() {
             </div>
           </div>
 
-          <div className="message-list" aria-live="polite">
+          <div
+            className="message-list"
+            aria-live="polite"
+            ref={messageListRef}
+            onScroll={() => {
+              const el = messageListRef.current;
+              if (!el) return;
+              // Consider "stuck" when within 48px of the bottom
+              isStuckToBottomRef.current =
+                el.scrollHeight - el.scrollTop - el.clientHeight < 48;
+            }}
+          >
             {messages.length === 0 ? (
               <div className="empty-state">
                 Запустите сессию и говорите, печатайте или включите камеру.
