@@ -970,6 +970,13 @@ input {
   margin-bottom: 0.9rem;
 }
 
+.panel-header--row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
 .events-panel {
   margin-top: 1rem;
   padding: 1rem;
@@ -998,10 +1005,48 @@ input {
 }
 
 .message-bubble {
+  position: relative;
   padding: 0.9rem 1rem;
   border-radius: 20px;
   border: 1px solid var(--line);
   background: var(--panel-strong);
+}
+
+.copy-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  color: var(--muted);
+  cursor: pointer;
+  transition: background 120ms ease, color 120ms ease;
+}
+
+.copy-button:hover {
+  background: var(--panel-strong);
+  color: var(--foreground);
+}
+
+.copy-all-button {
+  padding: 0.3rem 0.7rem;
+  font-size: 0.78rem;
+  white-space: nowrap;
+}
+
+.copy-message-button {
+  position: absolute;
+  top: 0.4rem;
+  right: 0.5rem;
+  padding: 0.15rem 0.35rem;
+  font-size: 0.7rem;
+  opacity: 0;
+  transition: opacity 150ms ease, background 120ms ease, color 120ms ease;
+}
+
+.message-bubble:hover .copy-message-button {
+  opacity: 1;
 }
 
 .message-bubble.user {

@@ -258,6 +258,8 @@ export function LiveConsole() {
   });
   const messageCounterRef = useRef(0);
   const eventCounterRef = useRef(0);
+  const messageListRef = useRef<HTMLDivElement | null>(null);
+  const isStuckToBottomRef = useRef(true);
 
   const appendEvent = useCallback((message: string) => {
     eventCounterRef.current += 1;
@@ -469,6 +471,13 @@ export function LiveConsole() {
   },
   [],
 );
+
+  useEffect(() => {
+    const el = messageListRef.current;
+    if (el && isStuckToBottomRef.current) {
+      el.scrollTop = el.scrollHeight;
+    }
+  }, [messages]);
 
   useEffect(() => {
     const savedKey = window.localStorage.getItem(API_KEY_STORAGE_KEY);
@@ -1547,14 +1556,44 @@ export function LiveConsole() {
         </div>
 
         <div className="console-panel transcript-panel">
-          <div className="panel-header">
+          <div className="panel-header panel-header--row">
             <div>
               <p className="eyebrow">Диалог</p>
               <h3>Живая расшифровка</h3>
             </div>
+            {messages.length > 0 && (
+              <button
+                type="button"
+                className="copy-button copy-all-button"
+                onClick={() => {
+                  const fullText = messages
+                    .map((m) => {
+                      const label = m.role === 'assistant' ? 'Gemini' : m.role === 'user' ? 'Вы' : 'Система';
+                      return `${label}: ${m.text}`;
+                    })
+                    .join('\n\n');
+                  void navigator.clipboard.writeText(fullText);
+                }}
+                aria-label="Копировать весь диалог"
+                title="Копировать весь диалог"
+              >
+                <span aria-hidden="true">📋</span> Копировать всё
+              </button>
+            )}
           </div>
 
-          <div className="message-list" aria-live="polite">
+          <div
+            className="message-list"
+            aria-live="polite"
+            ref={messageListRef}
+            onScroll={() => {
+              const el = messageListRef.current;
+              if (!el) return;
+              // Consider "stuck" when within 48px of the bottom
+              isStuckToBottomRef.current =
+                el.scrollHeight - el.scrollTop - el.clientHeight < 48;
+            }}
+          >
             {messages.length === 0 ? (
               <div className="empty-state">
                 Запустите сессию и говорите, печатайте или включите камеру.
@@ -1562,6 +1601,17 @@ export function LiveConsole() {
             ) : (
               messages.map((message) => (
                 <article key={message.id} className={`message-bubble ${message.role}`}>
+                  <button
+                    type="button"
+                    className="copy-button copy-message-button"
+                    onClick={() => {
+                      void navigator.clipboard.writeText(message.text);
+                    }}
+                    aria-label="Копировать сообщение"
+                    title="Копировать сообщение"
+                  >
+                    <span aria-hidden="true">📋</span>
+                  </button>
                   <span className="message-role">
                     {message.role === 'assistant'
                       ? 'Gemini'
