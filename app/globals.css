@@ -747,6 +747,13 @@ input {
   margin-left: auto;
 }
 
+.preset-bar-share--copied,
+.preset-bar-share--copied:hover {
+  border-color: color-mix(in srgb, #4ade80 60%, var(--line));
+  background: color-mix(in srgb, #4ade80 18%, var(--panel));
+  color: #4ade80;
+}
+
 .preset-import-drawer {
   max-width: 36rem;
 }

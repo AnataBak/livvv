@@ -205,6 +205,11 @@ export function LiveConsole() {
   const [isImportOpen, setIsImportOpen] = useState<boolean>(false);
   const [importText, setImportText] = useState<string>('');
   const [importError, setImportError] = useState<string | null>(null);
+  // Flips to true for ~1.8s after a successful clipboard copy so the
+  // share button can render a confirmation state. The previous timer is
+  // cleared on each click so rapid taps don't hide the checkmark early.
+  const [didCopyShare, setDidCopyShare] = useState<boolean>(false);
+  const copyResetTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [model, setModel] = useState<LiveModelId>(LIVE_MODEL_DEFAULT);
   const [hasResumptionHandle, setHasResumptionHandle] = useState<boolean>(false);
   const [memoryEnabled, setMemoryEnabled] = useState<boolean>(true);
@@ -859,6 +864,26 @@ export function LiveConsole() {
     appendEvent(`Пресет «${name}» удалён.`);
   }, [activePresetName, appendEvent, persistActivePresetName]);
 
+  const flashCopyConfirmation = useCallback(() => {
+    setDidCopyShare(true);
+    if (copyResetTimerRef.current) clearTimeout(copyResetTimerRef.current);
+    copyResetTimerRef.current = setTimeout(() => {
+      setDidCopyShare(false);
+      copyResetTimerRef.current = null;
+    }, 1800);
+  }, []);
+
+  // Clear the flash timer on unmount so we never call setState on an
+  // unmounted component (e.g. if the drawer closes mid-flash).
+  useEffect(() => {
+    return () => {
+      if (copyResetTimerRef.current) {
+        clearTimeout(copyResetTimerRef.current);
+        copyResetTimerRef.current = null;
+      }
+    };
+  }, []);
+
   const sharePreset = useCallback(async () => {
     if (!activePreset) {
       appendEvent('Нечего шарить — сначала выбери или сохрани пресет.');
@@ -871,6 +896,7 @@ export function LiveConsole() {
     try {
       if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
         await navigator.clipboard.writeText(encoded);
+        flashCopyConfirmation();
         appendEvent(`Пресет «${activePreset.name}» скопирован в буфер обмена.`);
         return;
       }
@@ -885,7 +911,7 @@ export function LiveConsole() {
         'Не удалось скопировать автоматически — строка пресета показана ниже, скопируй вручную.',
       );
     }
-  }, [activePreset, appendEvent]);
+  }, [activePreset, appendEvent, flashCopyConfirmation]);
 
   const handleImportPaste = useCallback(() => {
     const result = decodePresetShareString(importText);
@@ -1997,7 +2023,7 @@ export function LiveConsole() {
                     <div className="preset-bar-row preset-bar-row--actions">
                       <button
                         type="button"
-                        className="secondary-button"
+                        className={`secondary-button preset-bar-share${didCopyShare ? ' preset-bar-share--copied' : ''}`}
                         onClick={() => void sharePreset()}
                         disabled={activePresetName === null}
                         title={
@@ -2005,8 +2031,9 @@ export function LiveConsole() {
                             ? 'Чтобы поделиться — сначала выбери пресет'
                             : 'Скопировать пресет одной строкой в буфер обмена'
                         }
+                        aria-live="polite"
                       >
-                        Поделиться (скопировать)
+                        {didCopyShare ? '✓ Скопировано' : 'Поделиться (скопировать)'}
                       </button>
                       <button
                         type="button"
