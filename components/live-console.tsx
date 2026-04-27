@@ -112,6 +112,11 @@ const IMAGE_ATTACHMENT_JPEG_QUALITY_STORAGE_KEY = 'gemini-live-image-attachment-
 const IMAGE_ATTACHMENT_MAX_LONGEST_SIDE_STORAGE_KEY = 'gemini-live-image-attachment-max-longest-side';
 const LIVE_PROXY_ENABLED_STORAGE_KEY = 'gemini-live-proxy-enabled';
 const LIVE_PROXY_HOST_STORAGE_KEY = 'gemini-live-proxy-host';
+// Public Cloudflare worker that proxies the Live API for users in regions
+// where Gemini's edge is blocked. Pre-filled by default so the field never
+// looks empty — users can still overwrite it with a custom worker if they
+// run their own.
+const LIVE_PROXY_HOST_DEFAULT = 'livvv-proxy.artemhttp.workers.dev';
 
 const SCREEN_FORMAT_LABELS: Record<ScreenFormat, string> = {
   jpeg: 'JPEG (по умолчанию — легче по трафику)',
@@ -214,7 +219,7 @@ export function LiveConsole() {
   const [hasResumptionHandle, setHasResumptionHandle] = useState<boolean>(false);
   const [memoryEnabled, setMemoryEnabled] = useState<boolean>(true);
   const [liveProxyEnabled, setLiveProxyEnabled] = useState<boolean>(false);
-  const [liveProxyHost, setLiveProxyHost] = useState<string>('');
+  const [liveProxyHost, setLiveProxyHost] = useState<string>(LIVE_PROXY_HOST_DEFAULT);
   const wakeLock = useWakeLock(WAKE_LOCK_ENABLED_STORAGE_KEY);
   const [isSettingsOpen, setIsSettingsOpen] = useState<boolean>(false);
   const [activeSettingsSection, setActiveSettingsSection] = useState<'prompt' | 'model'>('prompt');
@@ -518,7 +523,10 @@ export function LiveConsole() {
       setLiveProxyEnabled(savedEnabled === 'true');
     }
     const savedHost = window.localStorage.getItem(LIVE_PROXY_HOST_STORAGE_KEY);
-    if (savedHost !== null) {
+    // Old builds persisted '' on first render, so an empty saved value is
+    // ambiguous — it could be a real "clear it" or just legacy noise. Treat
+    // both as "use the default" so the field never appears blank.
+    if (savedHost !== null && savedHost.trim().length > 0) {
       setLiveProxyHost(savedHost);
     }
   }, []);
