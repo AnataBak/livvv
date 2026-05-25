@@ -46,10 +46,12 @@ import {
   LIVE_VOICES,
   LIVE_WEB_SEARCH_ENABLED,
   SYSTEM_INSTRUCTION,
+  TAVILY_SEARCH_FUNCTION_NAME,
   isLiveModelId,
   isLiveThinkingLevel,
   modelSupportsSessionResumption,
   modelSupportsThinkingLevel,
+  modelUsesTavilySearch,
   type LiveModelId,
   type LiveThinkingLevel,
 } from '@/lib/live-session-config';
@@ -390,6 +392,11 @@ export function LiveConsole() {
             { id: nextMessageId(), role: 'assistant', text: event.text },
           ]);
           return;
+        case 'tool-call':
+          if (event.functionCalls.some((call) => call.name === TAVILY_SEARCH_FUNCTION_NAME)) {
+            appendEvent('Модель запросила Tavily-поиск.');
+          }
+          return;
         case 'input-transcription':
           upsertTranscript('user', event.text, event.finished);
           return;
@@ -463,6 +470,52 @@ export function LiveConsole() {
   },
   [],
 );
+
+  const executeToolCalls = useCallback(
+    async (
+      functionCalls: Array<{
+        id: string;
+        name: string;
+        args: Record<string, unknown>;
+      }>,
+      modelId: LiveModelId,
+    ) => {
+      if (
+        modelUsesTavilySearch(modelId) &&
+        functionCalls.some((call) => call.name === TAVILY_SEARCH_FUNCTION_NAME)
+      ) {
+        appendEvent('Выполняется Tavily-поиск для ответа модели.');
+      }
+
+      const response = await fetch('/api/live-tools', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          functionCalls,
+          model: modelId,
+        }),
+      });
+
+      const data = (await response.json()) as
+        | {
+            functionResponses: Array<{
+              id: string;
+              name: string;
+              response: Record<string, unknown>;
+            }>;
+          }
+        | { error: string };
+
+      if (!response.ok || !('functionResponses' in data)) {
+        throw new Error(
+          'error' in data ? data.error : 'Не удалось выполнить вызов инструмента.',
+        );
+      }
+
+      return data.functionResponses;
+    },
+    [appendEvent],
+  );
 
   useEffect(() => {
     const el = messageListRef.current;
@@ -1202,6 +1255,7 @@ export function LiveConsole() {
               onEvent: (event) => {
                 void handleLiveEvent(event);
               },
+              onToolCall: (functionCalls) => executeToolCalls(functionCalls, model),
               onError: (message) => {
                 setError(message);
                 setStatus('error');
@@ -1254,6 +1308,7 @@ export function LiveConsole() {
               onEvent: (event) => {
                 void handleLiveEvent(event);
               },
+              onToolCall: (functionCalls) => executeToolCalls(functionCalls, model),
               onError: (message) => {
                 setError(message);
                 setStatus('error');
@@ -1291,7 +1346,7 @@ export function LiveConsole() {
         setIsBusy(false);
       }
     },
-    [apiKeyInput, appendEvent, fetchEphemeralToken, handleLiveEvent, startMicrophone, teardownSession, temperature, voice, webSearchEnabled, thinkingLevel, thinkingLevelSupported, systemInstruction, model, language, memoryEnabled],
+    [apiKeyInput, appendEvent, executeToolCalls, fetchEphemeralToken, handleLiveEvent, startMicrophone, teardownSession, temperature, voice, webSearchEnabled, thinkingLevel, thinkingLevelSupported, systemInstruction, model, language, memoryEnabled],
   );
 
   const stopConversation = useCallback(() => {

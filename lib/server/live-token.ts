@@ -2,6 +2,7 @@ import { Modality } from '@google/genai';
 import {
   LIVE_MODEL_DEFAULT,
   LIVE_WEB_SEARCH_ENABLED,
+  buildSearchTools,
   modelSupportsContextWindowCompression,
   modelSupportsSessionResumption,
   modelSupportsThinkingLevel,
@@ -32,7 +33,7 @@ export function buildLiveTokenConfig(
   const config: Record<string, unknown> = {
     responseModalities: [Modality.AUDIO],
     temperature: 0.6,
-    tools: webSearchEnabled ? [{ googleSearch: {} }] : undefined,
+    tools: buildSearchTools(webSearchEnabled, model),
   };
 
   if (modelSupportsSessionResumption(model)) {

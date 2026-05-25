@@ -2,6 +2,7 @@ export type LiveServerEvent =
   | { type: 'setup-complete' }
   | { type: 'audio'; data: string }
   | { type: 'text'; text: string }
+  | { type: 'tool-call'; functionCalls: LiveFunctionCall[] }
   | { type: 'input-transcription'; text: string; finished: boolean }
   | { type: 'output-transcription'; text: string; finished: boolean }
   | { type: 'interrupted' }
@@ -9,12 +10,25 @@ export type LiveServerEvent =
   | { type: 'session-resumption-update'; handle: string; resumable: boolean }
   | { type: 'error'; message: string };
 
+export type LiveFunctionCall = {
+  id: string;
+  name: string;
+  args: Record<string, unknown>;
+};
+
 type MaybeMessage = {
   error?: { message?: string };
   setupComplete?: unknown;
   sessionResumptionUpdate?: {
     newHandle?: string;
     resumable?: boolean;
+  };
+  toolCall?: {
+    functionCalls?: Array<{
+      id?: string;
+      name?: string;
+      args?: unknown;
+    }>;
   };
   serverContent?: {
     interrupted?: boolean;
@@ -30,6 +44,24 @@ type MaybeMessage = {
   };
 };
 
+export function parseToolCallMessage(message: MaybeMessage): LiveFunctionCall[] {
+  const functionCalls = message.toolCall?.functionCalls ?? [];
+
+  return functionCalls
+    .filter(
+      (call): call is { id: string; name: string; args?: unknown } =>
+        typeof call?.id === 'string' && typeof call?.name === 'string',
+    )
+    .map((call) => ({
+      id: call.id,
+      name: call.name,
+      args:
+        typeof call.args === 'object' && call.args !== null
+          ? (call.args as Record<string, unknown>)
+          : {},
+    }));
+}
+
 export function parseLiveMessage(message: MaybeMessage): LiveServerEvent[] {
   const events: LiveServerEvent[] = [];
 
@@ -39,6 +71,11 @@ export function parseLiveMessage(message: MaybeMessage): LiveServerEvent[] {
 
   if (message.setupComplete) {
     events.push({ type: 'setup-complete' });
+  }
+
+  const functionCalls = parseToolCallMessage(message);
+  if (functionCalls.length > 0) {
+    events.push({ type: 'tool-call', functionCalls });
   }
 
   const parts = message.serverContent?.modelTurn?.parts ?? [];

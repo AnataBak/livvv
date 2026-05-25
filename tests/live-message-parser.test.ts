@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseLiveMessage } from '@/lib/client/live-message-parser';
+import { parseLiveMessage, parseToolCallMessage } from '@/lib/client/live-message-parser';
 
 describe('parseLiveMessage', () => {
   it('extracts all bundled events from one server message', () => {
@@ -65,5 +65,64 @@ describe('parseLiveMessage', () => {
     });
 
     expect(events).toEqual([]);
+  });
+
+  it('extracts tool calls from one server message', () => {
+    const events = parseLiveMessage({
+      toolCall: {
+        functionCalls: [
+          {
+            id: 'call-1',
+            name: 'tavily_search',
+            args: { query: 'latest AI news' },
+          },
+        ],
+      },
+    });
+
+    expect(events).toEqual([
+      {
+        type: 'tool-call',
+        functionCalls: [
+          {
+            id: 'call-1',
+            name: 'tavily_search',
+            args: { query: 'latest AI news' },
+          },
+        ],
+      },
+    ]);
+  });
+
+  it('extracts normalized tool calls directly', () => {
+    const toolCalls = parseToolCallMessage({
+      toolCall: {
+        functionCalls: [
+          {
+            id: 'call-1',
+            name: 'tavily_search',
+            args: { query: 'weather', maxResults: 3 },
+          },
+          {
+            id: 'call-2',
+            name: 'broken',
+            args: null,
+          },
+        ],
+      },
+    });
+
+    expect(toolCalls).toEqual([
+      {
+        id: 'call-1',
+        name: 'tavily_search',
+        args: { query: 'weather', maxResults: 3 },
+      },
+      {
+        id: 'call-2',
+        name: 'broken',
+        args: {},
+      },
+    ]);
   });
 });

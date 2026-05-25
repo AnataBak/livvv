@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import {
+  TAVILY_SEARCH_FUNCTION_NAME,
   buildSessionSetupMessage,
   isLiveModelId,
   isLiveThinkingLevel,
   modelSupportsThinkingLevel,
+  modelUsesTavilySearch,
   LIVE_MODEL,
   LIVE_MODELS,
   LIVE_MODEL_DEFAULT,
@@ -44,7 +46,15 @@ describe('live session config', () => {
   it('adds Google Search tool when web search is enabled', () => {
     const payload = buildSessionSetupMessage(0.6, 'Puck', true);
 
-    expect(payload.setup.tools).toEqual([{ googleSearch: {} }]);
+    expect(payload.setup.tools).toEqual([
+      {
+        functionDeclarations: [
+          expect.objectContaining({
+            name: TAVILY_SEARCH_FUNCTION_NAME,
+          }),
+        ],
+      },
+    ]);
   });
 
   it('adds thinkingConfig when a thinking level is provided', () => {
@@ -112,7 +122,15 @@ describe('live session config', () => {
     const payload = buildLiveTokenConfig(0, true);
     const config = payload.liveConnectConstraints.config as Record<string, unknown>;
 
-    expect(config.tools).toEqual([{ googleSearch: {} }]);
+    expect(config.tools).toEqual([
+      {
+        functionDeclarations: [
+          expect.objectContaining({
+            name: TAVILY_SEARCH_FUNCTION_NAME,
+          }),
+        ],
+      },
+    ]);
   });
 
   it('adds thinkingConfig to constrained token config when thinking level is provided', () => {
@@ -152,6 +170,23 @@ describe('live session config', () => {
   it('only 3.1 Live supports thinkingLevel', () => {
     expect(modelSupportsThinkingLevel('gemini-3.1-flash-live-preview')).toBe(true);
     expect(modelSupportsThinkingLevel('gemini-2.5-flash-native-audio-preview-12-2025')).toBe(false);
+  });
+
+  it('uses Tavily-backed search tools for 3.1 and Google Search for 2.5', () => {
+    expect(modelUsesTavilySearch('gemini-3.1-flash-live-preview')).toBe(true);
+    expect(modelUsesTavilySearch('gemini-2.5-flash-native-audio-preview-12-2025')).toBe(false);
+
+    const payload = buildSessionSetupMessage(
+      0.6,
+      'Puck',
+      true,
+      undefined,
+      undefined,
+      undefined,
+      'gemini-2.5-flash-native-audio-preview-12-2025',
+    );
+
+    expect(payload.setup.tools).toEqual([{ googleSearch: {} }]);
   });
 
   it('threads a custom model id into the setup payload', () => {

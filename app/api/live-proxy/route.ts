@@ -5,9 +5,11 @@ import {
   buildSessionSetupMessage,
   isLiveModelId,
   isLiveThinkingLevel,
+  type LiveModelId,
 } from '@/lib/live-session-config';
-import { parseLiveMessage } from '@/lib/client/live-message-parser';
+import { parseLiveMessage, parseToolCallMessage } from '@/lib/client/live-message-parser';
 import type { LiveServerEvent } from '@/lib/client/live-message-parser';
+import { executeLiveFunctionCalls } from '@/lib/server/live-tools';
 
 function buildLiveServiceUrl(accessToken: string) {
   return `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContentConstrained?access_token=${encodeURIComponent(accessToken)}`;
@@ -21,7 +23,38 @@ const connections = new Map<string, {
   messages: LiveServerEvent[];
   isConnected: boolean;
   sessionId: string;
+  model: LiveModelId;
 }>();
+
+async function handleGeminiMessage(
+  connection: {
+    geminiWs: WebSocket;
+    messages: LiveServerEvent[];
+    isConnected: boolean;
+    sessionId: string;
+    model: LiveModelId;
+  },
+  data: WebSocket.Data,
+) {
+  const rawData = data.toString();
+  const parsed = JSON.parse(rawData);
+  const functionCalls = parseToolCallMessage(parsed);
+
+  if (functionCalls.length > 0) {
+    const functionResponses = await executeLiveFunctionCalls(functionCalls, connection.model);
+    connection.geminiWs.send(
+      JSON.stringify({
+        toolResponse: {
+          functionResponses,
+        },
+      }),
+    );
+    return;
+  }
+
+  const events = parseLiveMessage(parsed);
+  connection.messages.push(...events);
+}
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
@@ -66,7 +99,8 @@ export async function POST(request: NextRequest) {
           geminiWs,
           messages: [] as LiveServerEvent[],
           isConnected: false,
-          sessionId: newSessionId
+          sessionId: newSessionId,
+          model: safeModel,
         };
 
         // Wait for Gemini WebSocket to open
@@ -103,14 +137,14 @@ export async function POST(request: NextRequest) {
         connections.set(newSessionId, connection);
 
         geminiWs.on('message', (data: WebSocket.Data) => {
-          try {
-            const rawData = data.toString();
-            const parsed = JSON.parse(rawData);
-            const events = parseLiveMessage(parsed);
-            connection.messages.push(...events);
-          } catch (error) {
-            console.error('Error parsing Gemini message:', error);
-          }
+          void handleGeminiMessage(connection, data).catch((error) => {
+            console.error('Error handling Gemini message:', error);
+            connection.messages.push({
+              type: 'error',
+              message:
+                error instanceof Error ? error.message : 'Failed to execute Live tool call.',
+            });
+          });
         });
 
         geminiWs.on('error', (error: Error) => {
