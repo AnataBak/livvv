@@ -11,6 +11,7 @@ Minimal `Next.js` starter for talking to `gemini-3.1-flash-live-preview` with:
 - mobile-friendly layout
 - Vercel-ready server route for ephemeral tokens
 - optional one-time API key field stored only in the current browser tab
+- Tavily-backed web search for Gemini 3.1 Live when internet search is enabled
 
 ## Stack
 
@@ -37,7 +38,11 @@ Minimal `Next.js` starter for talking to `gemini-3.1-flash-live-preview` with:
 
    ```env
    GEMINI_API_KEY=your_key_here
+   TAVILY_API_KEY=tvly_your_key_here
    ```
+
+   `TAVILY_API_KEY` is required if you want the "internet search" toggle to work on
+   `gemini-3.1-flash-live-preview`. The app routes those search tool calls through Tavily.
 
 4. Start the app:
 
@@ -68,6 +73,10 @@ Minimal `Next.js` starter for talking to `gemini-3.1-flash-live-preview` with:
 - The browser connects to Gemini Live with short-lived ephemeral tokens, so the real API key stays server-side.
 - If you paste an API key into the page, the browser connects directly with that key and the key is
   kept only in `sessionStorage` for the current tab.
+- On `gemini-3.1-flash-live-preview`, enabling internet search exposes a custom `tavily_search`
+  function tool to Gemini and executes it on the server with `TAVILY_API_KEY`.
+- On `gemini-2.5-flash-native-audio-preview-12-2025`, the same toggle keeps using Gemini's native
+  `googleSearch` tool.
 - Audio input is converted to `audio/pcm;rate=16000`.
 - Camera frames are sent as `image/jpeg` once per second.
 - Gemini audio output is played back as 24kHz PCM.

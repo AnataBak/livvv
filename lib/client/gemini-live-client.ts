@@ -5,7 +5,12 @@ import {
   type LiveModelId,
   type LiveThinkingLevel,
 } from '@/lib/live-session-config';
-import { parseLiveMessage, type LiveServerEvent } from '@/lib/client/live-message-parser';
+import {
+  parseLiveMessage,
+  parseToolCallMessage,
+  type LiveFunctionCall,
+  type LiveServerEvent,
+} from '@/lib/client/live-message-parser';
 
 type ServerMessageShape = {
   setupComplete?: unknown;
@@ -120,6 +125,11 @@ type ClientCallbacks = {
   onClose?: (reason: string) => void;
   onEvent?: (event: LiveServerEvent) => void;
   onError?: (message: string) => void;
+  onToolCall?: (functionCalls: LiveFunctionCall[]) => Promise<Array<{
+    id: string;
+    name: string;
+    response: Record<string, unknown>;
+  }>>;
 };
 
 type GeminiLiveClientAuth =
@@ -238,6 +248,11 @@ export class GeminiLiveClient {
             // parts, transcripts, interrupt/turn-complete flags.
             console.debug('[gemini-live]', summarizeServerMessage(parsed), parsed);
           }
+          const functionCalls = parseToolCallMessage(parsed);
+          if (functionCalls.length > 0 && this.callbacks.onToolCall) {
+            const functionResponses = await this.callbacks.onToolCall(functionCalls);
+            this.sendToolResponse(functionResponses);
+          }
           const events = parseLiveMessage(parsed);
 
           for (const liveEvent of events) {
@@ -341,6 +356,18 @@ export class GeminiLiveClient {
           data: base64Image,
           mimeType,
         },
+      },
+    });
+  }
+
+  sendToolResponse(functionResponses: Array<{
+    id: string;
+    name: string;
+    response: Record<string, unknown>;
+  }>) {
+    this.send({
+      toolResponse: {
+        functionResponses,
       },
     });
   }

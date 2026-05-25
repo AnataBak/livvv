@@ -42,6 +42,10 @@ export function modelSupportsContextWindowCompression(model: LiveModelId): boole
   return Boolean(LIVE_MODELS.find((m) => m.id === model)?.supportsContextWindowCompression);
 }
 
+export function modelUsesTavilySearch(model: LiveModelId): boolean {
+  return model === 'gemini-3.1-flash-live-preview';
+}
+
 export const LIVE_VOICE = 'Puck';
 
 // Full list of 30 prebuilt voices available in Gemini Live / TTS.
@@ -108,6 +112,7 @@ export const LIVE_LANGUAGES = [
 ] as const;
 
 export const LIVE_WEB_SEARCH_ENABLED = false;
+export const TAVILY_SEARCH_FUNCTION_NAME = 'tavily_search';
 export const AUDIO_INPUT_SAMPLE_RATE = 16000;
 export const AUDIO_OUTPUT_SAMPLE_RATE = 24000;
 export const CAMERA_FRAME_RATE = 1;
@@ -206,6 +211,66 @@ export function isLiveThinkingLevel(value: unknown): value is LiveThinkingLevel 
   return typeof value === 'string' && (LIVE_THINKING_LEVELS as readonly string[]).includes(value);
 }
 
+export const TAVILY_SEARCH_FUNCTION_DECLARATION = {
+  name: TAVILY_SEARCH_FUNCTION_NAME,
+  description:
+    'Search the web for recent or factual information and return sourced results from Tavily.',
+  parameters: {
+    type: 'OBJECT',
+    properties: {
+      query: {
+        type: 'STRING',
+        description: 'The web search query to execute.',
+      },
+      topic: {
+        type: 'STRING',
+        description: 'Search scope: general for broad web search or news for recent reporting.',
+        enum: ['general', 'news'],
+      },
+      timeRange: {
+        type: 'STRING',
+        description: 'Optional recency filter for newsy or recent queries.',
+        enum: ['day', 'week', 'month', 'year'],
+      },
+      maxResults: {
+        type: 'INTEGER',
+        description: 'Maximum number of results to return, from 1 to 10.',
+      },
+      searchDepth: {
+        type: 'STRING',
+        description: 'Latency versus depth tradeoff.',
+        enum: ['basic', 'advanced'],
+      },
+      includeDomains: {
+        type: 'ARRAY',
+        description: 'Optional allowlist of domains to prioritize.',
+        items: { type: 'STRING' },
+      },
+      excludeDomains: {
+        type: 'ARRAY',
+        description: 'Optional blocklist of domains to exclude.',
+        items: { type: 'STRING' },
+      },
+    },
+    required: ['query'],
+  },
+} as const;
+
+export function buildSearchTools(
+  webSearchEnabled: boolean,
+  model: LiveModelId,
+): Array<Record<string, unknown>> | undefined {
+  if (!webSearchEnabled) {
+    return undefined;
+  }
+
+  if (modelUsesTavilySearch(model)) {
+    return [{ functionDeclarations: [TAVILY_SEARCH_FUNCTION_DECLARATION] }];
+  }
+
+  return [{ googleSearch: {} }];
+}
+
 export function buildSessionSetupMessage(
   temperature: number = 0.6,
   voice: string = LIVE_VOICE,
@@ -245,7 +310,7 @@ export function buildSessionSetupMessage(
   const setup: Record<string, unknown> = {
     model: `models/${model}`,
     generationConfig,
-    tools: webSearchEnabled ? [{ googleSearch: {} }] : undefined,
+    tools: buildSearchTools(webSearchEnabled, model),
     systemInstruction: {
       parts: [{ text: systemInstruction }],
     },
