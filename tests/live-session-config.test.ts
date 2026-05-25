@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   TAVILY_SEARCH_FUNCTION_NAME,
+  buildSessionTools,
   buildSessionSetupMessage,
   isLiveModelId,
   isLiveThinkingLevel,
@@ -51,6 +52,20 @@ describe('live session config', () => {
         functionDeclarations: [
           expect.objectContaining({
             name: TAVILY_SEARCH_FUNCTION_NAME,
+          }),
+        ],
+      },
+    ]);
+  });
+
+  it('adds the Google Calendar tool when enabled for the session', () => {
+    const tools = buildSessionTools(false, LIVE_MODEL_DEFAULT, true);
+
+    expect(tools).toEqual([
+      {
+        functionDeclarations: [
+          expect.objectContaining({
+            name: 'google_calendar_create_event',
           }),
         ],
       },

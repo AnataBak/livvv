@@ -1,3 +1,7 @@
+import {
+  GOOGLE_CALENDAR_CREATE_EVENT_DECLARATION,
+} from '@/lib/google-calendar';
+
 export const LIVE_MODELS = [
   {
     id: 'gemini-3.1-flash-live-preview',
@@ -271,6 +275,27 @@ export function buildSearchTools(
   return [{ googleSearch: {} }];
 }
 
+export function buildSessionTools(
+  webSearchEnabled: boolean,
+  model: LiveModelId,
+  googleCalendarEnabled: boolean = false,
+): Array<Record<string, unknown>> | undefined {
+  const tools: Array<Record<string, unknown>> = [];
+  const searchTools = buildSearchTools(webSearchEnabled, model);
+
+  if (searchTools) {
+    tools.push(...searchTools);
+  }
+
+  if (googleCalendarEnabled) {
+    tools.push({
+      functionDeclarations: [GOOGLE_CALENDAR_CREATE_EVENT_DECLARATION],
+    });
+  }
+
+  return tools.length > 0 ? tools : undefined;
+}
+
 export function buildSessionSetupMessage(
   temperature: number = 0.6,
   voice: string = LIVE_VOICE,
@@ -280,6 +305,7 @@ export function buildSessionSetupMessage(
   systemInstruction: string = SYSTEM_INSTRUCTION,
   model: LiveModelId = LIVE_MODEL_DEFAULT,
   language?: string,
+  googleCalendarEnabled: boolean = false,
 ) {
   const speechConfig: Record<string, unknown> = {
     voiceConfig: {
@@ -310,7 +336,7 @@ export function buildSessionSetupMessage(
   const setup: Record<string, unknown> = {
     model: `models/${model}`,
     generationConfig,
-    tools: buildSearchTools(webSearchEnabled, model),
+    tools: buildSessionTools(webSearchEnabled, model, googleCalendarEnabled),
     systemInstruction: {
       parts: [{ text: systemInstruction }],
     },

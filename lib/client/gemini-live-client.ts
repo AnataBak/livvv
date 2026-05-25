@@ -11,6 +11,7 @@ import {
   type LiveFunctionCall,
   type LiveServerEvent,
 } from '@/lib/client/live-message-parser';
+import type { GoogleCalendarBrowserAuth } from '@/lib/google-calendar';
 
 type ServerMessageShape = {
   setupComplete?: unknown;
@@ -178,6 +179,7 @@ export class GeminiLiveClient {
   private model: LiveModelId;
   private language: string | undefined;
   private liveServiceHost: string;
+  private googleCalendarAuth: GoogleCalendarBrowserAuth | null;
   private pollInterval: NodeJS.Timeout | null = null;
   private isConnected = false;
   private socket: WebSocket | null = null;
@@ -194,6 +196,7 @@ export class GeminiLiveClient {
     model: LiveModelId = LIVE_MODEL_DEFAULT,
     language?: string,
     liveServiceHost: string = DEFAULT_LIVE_SERVICE_HOST,
+    googleCalendarAuth: GoogleCalendarBrowserAuth | null = null,
   ) {
     this.auth = auth;
     this.callbacks = callbacks;
@@ -206,6 +209,7 @@ export class GeminiLiveClient {
     this.model = model;
     this.language = language;
     this.liveServiceHost = liveServiceHost;
+    this.googleCalendarAuth = googleCalendarAuth;
   }
 
   async connect() {
@@ -243,6 +247,7 @@ export class GeminiLiveClient {
               this.systemInstruction,
               this.model,
               this.language,
+              Boolean(this.googleCalendarAuth),
             ),
           ),
         );
@@ -308,6 +313,7 @@ export class GeminiLiveClient {
           systemInstruction: this.systemInstruction,
           model: this.model,
           language: this.language,
+          googleCalendarAuth: this.googleCalendarAuth,
         }),
       });
 

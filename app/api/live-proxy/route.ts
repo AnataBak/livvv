@@ -10,6 +10,7 @@ import {
 import { parseLiveMessage, parseToolCallMessage } from '@/lib/client/live-message-parser';
 import type { LiveServerEvent } from '@/lib/client/live-message-parser';
 import { executeLiveFunctionCalls } from '@/lib/server/live-tools';
+import type { GoogleCalendarBrowserAuth } from '@/lib/google-calendar';
 
 function buildLiveServiceUrl(accessToken: string) {
   return `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContentConstrained?access_token=${encodeURIComponent(accessToken)}`;
@@ -24,6 +25,7 @@ const connections = new Map<string, {
   isConnected: boolean;
   sessionId: string;
   model: LiveModelId;
+  googleCalendarAuth: GoogleCalendarBrowserAuth | null;
 }>();
 
 async function handleGeminiMessage(
@@ -33,6 +35,7 @@ async function handleGeminiMessage(
     isConnected: boolean;
     sessionId: string;
     model: LiveModelId;
+    googleCalendarAuth: GoogleCalendarBrowserAuth | null;
   },
   data: WebSocket.Data,
 ) {
@@ -41,7 +44,12 @@ async function handleGeminiMessage(
   const functionCalls = parseToolCallMessage(parsed);
 
   if (functionCalls.length > 0) {
-    const functionResponses = await executeLiveFunctionCalls(functionCalls, connection.model);
+    const functionResponses = await executeLiveFunctionCalls(
+      functionCalls,
+      connection.model,
+      process.env,
+      { googleCalendarAuth: connection.googleCalendarAuth },
+    );
     connection.geminiWs.send(
       JSON.stringify({
         toolResponse: {
@@ -70,7 +78,7 @@ export async function GET(request: NextRequest) {
 
 // HTTP-based proxy using polling
 export async function POST(request: NextRequest) {
-  const { action, sessionId, message, token, temperature, voice, webSearchEnabled, thinkingLevel, resumptionHandle, systemInstruction, model, language } = await request.json();
+  const { action, sessionId, message, token, temperature, voice, webSearchEnabled, thinkingLevel, resumptionHandle, systemInstruction, model, language, googleCalendarAuth } = await request.json();
   const safeTemperature = typeof temperature === 'number' && Number.isFinite(temperature) ? temperature : 0.6;
   const safeVoice = typeof voice === 'string' && voice.trim().length > 0 ? voice : 'Puck';
   const safeLanguage = typeof language === 'string' && language.trim().length > 0 ? language : undefined;
@@ -82,6 +90,12 @@ export async function POST(request: NextRequest) {
     ? systemInstruction
     : undefined;
   const safeModel = isLiveModelId(model) ? model : LIVE_MODEL_DEFAULT;
+  const safeGoogleCalendarAuth =
+    googleCalendarAuth &&
+    typeof googleCalendarAuth === 'object' &&
+    typeof googleCalendarAuth.refreshToken === 'string'
+      ? (googleCalendarAuth as GoogleCalendarBrowserAuth)
+      : null;
 
   try {
     if (action === 'connect') {
@@ -101,6 +115,7 @@ export async function POST(request: NextRequest) {
           isConnected: false,
           sessionId: newSessionId,
           model: safeModel,
+          googleCalendarAuth: safeGoogleCalendarAuth,
         };
 
         // Wait for Gemini WebSocket to open
@@ -121,6 +136,7 @@ export async function POST(request: NextRequest) {
                   safeSystemInstruction,
                   safeModel,
                   safeLanguage,
+                  Boolean(safeGoogleCalendarAuth),
                 ),
               ),
             );

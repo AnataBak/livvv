@@ -39,10 +39,14 @@ Minimal `Next.js` starter for talking to `gemini-3.1-flash-live-preview` with:
    ```env
    GEMINI_API_KEY=your_key_here
    TAVILY_API_KEY=tvly_your_key_here
+   GOOGLE_CLIENT_ID=your_google_oauth_client_id_here
+   GOOGLE_CLIENT_SECRET=your_google_oauth_client_secret_here
    ```
 
    `TAVILY_API_KEY` is required if you want the "internet search" toggle to work on
    `gemini-3.1-flash-live-preview`. The app routes those search tool calls through Tavily.
+   `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` are required if you want users to connect
+   their own Google Calendar from the settings drawer.
 
 4. Start the app:
 
@@ -75,6 +79,8 @@ Minimal `Next.js` starter for talking to `gemini-3.1-flash-live-preview` with:
   kept only in `sessionStorage` for the current tab.
 - On `gemini-3.1-flash-live-preview`, enabling internet search exposes a custom `tavily_search`
   function tool to Gemini and executes it on the server with `TAVILY_API_KEY`.
+- When a user connects Google Calendar in the settings drawer, Gemini also gets a
+  `google_calendar_create_event` tool for creating calendar events in that user's account.
 - On `gemini-2.5-flash-native-audio-preview-12-2025`, the same toggle keeps using Gemini's native
   `googleSearch` tool.
 - Audio input is converted to `audio/pcm;rate=16000`.

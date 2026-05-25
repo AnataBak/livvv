@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import { useCallback, useEffect, useRef, useState, type ChangeEvent } from 'react';
 import { createPortal } from 'react-dom';
@@ -9,6 +9,12 @@ import { MicrophoneRecorder } from '@/lib/client/microphone-recorder';
 import { ScreenStreamer, isScreenShareSupported } from '@/lib/client/screen-streamer';
 import { prepareImageAttachment, type PreparedImageAttachment } from '@/lib/client/image-attachment';
 import { useWakeLock } from '@/lib/client/use-wake-lock';
+import {
+  GOOGLE_CALENDAR_AUTH_STORAGE_KEY,
+  GOOGLE_CALENDAR_CREATE_EVENT_FUNCTION_NAME,
+  GOOGLE_CALENDAR_OAUTH_MESSAGE_TYPE,
+  type GoogleCalendarBrowserAuth,
+} from '@/lib/google-calendar';
 import {
   IMAGE_ATTACHMENT_FORMAT_DEFAULT,
   IMAGE_ATTACHMENT_FORMATS,
@@ -93,7 +99,11 @@ type EventItem = {
   text: string;
 };
 
-const initialEvents: EventItem[] = [{ id: 'event-0', text: 'Все готово к запуску сессии Gemini Live.' }];
+type GoogleCalendarOAuthResult =
+  | { status: 'success'; auth: GoogleCalendarBrowserAuth }
+  | { status: 'error'; message: string };
+
+const initialEvents: EventItem[] = [{ id: 'event-0', text: 'Р’СЃРµ РіРѕС‚РѕРІРѕ Рє Р·Р°РїСѓСЃРєСѓ СЃРµСЃСЃРёРё Gemini Live.' }];
 const API_KEY_STORAGE_KEY = 'gemini-live-api-key';
 const TEMPERATURE_STORAGE_KEY = 'gemini-live-temperature';
 const VOICE_STORAGE_KEY = 'gemini-live-voice';
@@ -116,21 +126,21 @@ const LIVE_PROXY_ENABLED_STORAGE_KEY = 'gemini-live-proxy-enabled';
 const LIVE_PROXY_HOST_STORAGE_KEY = 'gemini-live-proxy-host';
 // Public Cloudflare worker that proxies the Live API for users in regions
 // where Gemini's edge is blocked. Pre-filled by default so the field never
-// looks empty — users can still overwrite it with a custom worker if they
+// looks empty вЂ” users can still overwrite it with a custom worker if they
 // run their own.
 const LIVE_PROXY_HOST_DEFAULT = 'livvv-proxy.artemhttp.workers.dev';
 
 const SCREEN_FORMAT_LABELS: Record<ScreenFormat, string> = {
-  jpeg: 'JPEG (по умолчанию — легче по трафику)',
-  png: 'PNG (без потерь, идеально для текста)',
+  jpeg: 'JPEG (РїРѕ СѓРјРѕР»С‡Р°РЅРёСЋ вЂ” Р»РµРіС‡Рµ РїРѕ С‚СЂР°С„РёРєСѓ)',
+  png: 'PNG (Р±РµР· РїРѕС‚РµСЂСЊ, РёРґРµР°Р»СЊРЅРѕ РґР»СЏ С‚РµРєСЃС‚Р°)',
 };
 
 const IMAGE_ATTACHMENT_FORMAT_LABELS: Record<ImageAttachmentFormat, string> = {
-  jpeg: 'JPEG (по умолчанию)',
-  png: 'PNG (без потерь)',
+  jpeg: 'JPEG (РїРѕ СѓРјРѕР»С‡Р°РЅРёСЋ)',
+  png: 'PNG (Р±РµР· РїРѕС‚РµСЂСЊ)',
 };
 
-/** Slider value for the «native» tick — one step beyond the numeric max. */
+/** Slider value for the В«nativeВ» tick вЂ” one step beyond the numeric max. */
 const SCREEN_NATIVE_SLIDER_VALUE = SCREEN_MAX_LONGEST_SIDE_MAX + SCREEN_MAX_LONGEST_SIDE_STEP;
 const IMAGE_NATIVE_SLIDER_VALUE = IMAGE_ATTACHMENT_MAX_LONGEST_SIDE_MAX + IMAGE_ATTACHMENT_MAX_LONGEST_SIDE_STEP;
 
@@ -145,16 +155,58 @@ function sliderToMaxLongestSide(slider: number, nativeSliderValue: number): numb
 function formatJpegQuality(value: number): string {
   return value.toFixed(2);
 }
+
+function readGoogleCalendarAuth(): GoogleCalendarBrowserAuth | null {
+  if (typeof window === 'undefined') {
+    return null;
+  }
+
+  try {
+    const raw = window.localStorage.getItem(GOOGLE_CALENDAR_AUTH_STORAGE_KEY);
+
+    if (!raw) {
+      return null;
+    }
+
+    const parsed = JSON.parse(raw) as Partial<GoogleCalendarBrowserAuth>;
+
+    if (typeof parsed.refreshToken !== 'string' || typeof parsed.connectedAt !== 'string') {
+      return null;
+    }
+
+    return {
+      refreshToken: parsed.refreshToken,
+      connectedAt: parsed.connectedAt,
+      calendarId: typeof parsed.calendarId === 'string' ? parsed.calendarId : undefined,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function buildEffectiveSystemInstruction(baseInstruction: string): string {
+  const trimmed = baseInstruction.trim();
+  const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+  const now = new Date();
+
+  return [
+    trimmed,
+    '',
+    `Current user local date/time: ${now.toISOString()}`,
+    `User time zone: ${tz}`,
+    'When a task depends on dates or times, interpret relative phrases like "today", "tomorrow", and "next week" using this local time context.',
+  ].join('\n');
+}
 const THINKING_LEVEL_LABELS: Record<LiveThinkingLevel, string> = {
-  minimal: 'Минимальные (по умолчанию)',
-  low: 'Низкие',
-  medium: 'Средние',
-  high: 'Высокие',
+  minimal: 'РњРёРЅРёРјР°Р»СЊРЅС‹Рµ (РїРѕ СѓРјРѕР»С‡Р°РЅРёСЋ)',
+  low: 'РќРёР·РєРёРµ',
+  medium: 'РЎСЂРµРґРЅРёРµ',
+  high: 'Р’С‹СЃРѕРєРёРµ',
 };
 // Gemini closes the WS with one of these strings when the stored resumption
 // handle is no longer usable (handles expire after ~24h and are also invalid
 // across models / quota resets). On any of them we want to drop the saved
-// handle so the next click on «Запустить сессию» starts a fresh dialogue.
+// handle so the next click on В«Р—Р°РїСѓСЃС‚РёС‚СЊ СЃРµСЃСЃРёСЋВ» starts a fresh dialogue.
 const STALE_HANDLE_REASON_PATTERNS = [
   'session expired',
   'invalid session handle',
@@ -168,11 +220,11 @@ function isStaleHandleReason(reason: unknown): boolean {
 }
 
 const STATUS_LABELS: Record<'idle' | 'connecting' | 'active' | 'stopped' | 'error', string> = {
-  idle: 'Ожидание',
-  connecting: 'Подключение',
-  active: 'Активна',
-  stopped: 'Остановлена',
-  error: 'Ошибка',
+  idle: 'РћР¶РёРґР°РЅРёРµ',
+  connecting: 'РџРѕРґРєР»СЋС‡РµРЅРёРµ',
+  active: 'РђРєС‚РёРІРЅР°',
+  stopped: 'РћСЃС‚Р°РЅРѕРІР»РµРЅР°',
+  error: 'РћС€РёР±РєР°',
 };
 
 export function LiveConsole() {
@@ -206,6 +258,8 @@ export function LiveConsole() {
   const [webSearchEnabled, setWebSearchEnabled] = useState<boolean>(LIVE_WEB_SEARCH_ENABLED);
   const [thinkingLevel, setThinkingLevel] = useState<LiveThinkingLevel>(LIVE_THINKING_LEVEL_DEFAULT);
   const [systemInstruction, setSystemInstruction] = useState<string>(SYSTEM_INSTRUCTION);
+  const [googleCalendarAuth, setGoogleCalendarAuth] = useState<GoogleCalendarBrowserAuth | null>(null);
+  const [isGoogleCalendarConnecting, setIsGoogleCalendarConnecting] = useState<boolean>(false);
   const [presets, setPresets] = useState<PresetV1[]>([]);
   const [activePresetName, setActivePresetName] = useState<string | null>(null);
   const [newPresetName, setNewPresetName] = useState<string>('');
@@ -227,6 +281,7 @@ export function LiveConsole() {
   const [activeSettingsSection, setActiveSettingsSection] = useState<'prompt' | 'model'>('prompt');
   const [isPresetActionsOpen, setIsPresetActionsOpen] = useState<boolean>(false);
   const thinkingLevelSupported = modelSupportsThinkingLevel(model);
+  const googleCalendarConnected = Boolean(googleCalendarAuth?.refreshToken);
   const resumptionHandleRef = useRef<string | null>(null);
   const modelRef = useRef<LiveModelId>(model);
   useEffect(() => {
@@ -254,6 +309,7 @@ export function LiveConsole() {
   const eventCounterRef = useRef(0);
   const messageListRef = useRef<HTMLDivElement | null>(null);
   const isStuckToBottomRef = useRef(true);
+  const googleCalendarPopupRef = useRef<Window | null>(null);
 
   const appendEvent = useCallback((message: string) => {
     eventCounterRef.current += 1;
@@ -343,11 +399,11 @@ export function LiveConsole() {
 
   const switchCamera = useCallback(async () => {
     if (!clientRef.current) {
-      throw new Error('Сначала запустите сессию, а потом переключайте камеру.');
+      throw new Error('РЎРЅР°С‡Р°Р»Р° Р·Р°РїСѓСЃС‚РёС‚Рµ СЃРµСЃСЃРёСЋ, Р° РїРѕС‚РѕРј РїРµСЂРµРєР»СЋС‡Р°Р№С‚Рµ РєР°РјРµСЂСѓ.');
     }
 
     if (!videoRef.current || !cameraRef.current) {
-      throw new Error('Камера сейчас не активна.');
+      throw new Error('РљР°РјРµСЂР° СЃРµР№С‡Р°СЃ РЅРµ Р°РєС‚РёРІРЅР°.');
     }
 
     await cameraRef.current.switchCamera(videoRef.current, (frame, mimeType) => {
@@ -357,7 +413,7 @@ export function LiveConsole() {
     const newMode = cameraRef.current.getCurrentFacingMode();
     setCameraFacingMode(newMode);
     setCameraStreamVersion((v) => v + 1);
-    appendEvent(`Камера переключена на ${newMode === 'user' ? 'фронтальную' : 'основную'}.`);
+    appendEvent(`РљР°РјРµСЂР° РїРµСЂРµРєР»СЋС‡РµРЅР° РЅР° ${newMode === 'user' ? 'С„СЂРѕРЅС‚Р°Р»СЊРЅСѓСЋ' : 'РѕСЃРЅРѕРІРЅСѓСЋ'}.`);
   }, [appendEvent]);
 
   const teardownSession = useCallback(() => {
@@ -376,7 +432,7 @@ export function LiveConsole() {
     async (event: LiveServerEvent) => {
       switch (event.type) {
         case 'setup-complete':
-          appendEvent('Сессия Gemini Live готова.');
+          appendEvent('РЎРµСЃСЃРёСЏ Gemini Live РіРѕС‚РѕРІР°.');
           return;
         case 'audio':
           // Audio from the model signals the user's turn is over: close their
@@ -394,7 +450,10 @@ export function LiveConsole() {
           return;
         case 'tool-call':
           if (event.functionCalls.some((call) => call.name === TAVILY_SEARCH_FUNCTION_NAME)) {
-            appendEvent('Модель запросила Tavily-поиск.');
+            appendEvent('РњРѕРґРµР»СЊ Р·Р°РїСЂРѕСЃРёР»Р° Tavily-РїРѕРёСЃРє.');
+          }
+          if (event.functionCalls.some((call) => call.name === GOOGLE_CALENDAR_CREATE_EVENT_FUNCTION_NAME)) {
+            appendEvent('Google Calendar event requested by the model.');
           }
           return;
         case 'input-transcription':
@@ -402,7 +461,7 @@ export function LiveConsole() {
           return;
         case 'output-transcription':
           // Same reasoning as 'audio': when the model starts speaking, the
-          // user's turn has ended — finalize their bubble so the next
+          // user's turn has ended вЂ” finalize their bubble so the next
           // utterance is a new message.
           finalizePendingMessage('user');
           upsertTranscript('assistant', event.text, event.finished);
@@ -411,12 +470,12 @@ export function LiveConsole() {
           audioPlayerRef.current?.interrupt();
           finalizePendingMessage('assistant');
           finalizePendingMessage('user');
-          appendEvent('Ответ модели был прерван.');
+          appendEvent('РћС‚РІРµС‚ РјРѕРґРµР»Рё Р±С‹Р» РїСЂРµСЂРІР°РЅ.');
           return;
         case 'turn-complete':
           finalizePendingMessage('assistant');
           finalizePendingMessage('user');
-          appendEvent('Ход завершён.');
+          appendEvent('РҐРѕРґ Р·Р°РІРµСЂС€С‘РЅ.');
           return;
         case 'session-resumption-update':
           // Gemini periodically issues a new handle we can use to resume this
@@ -441,7 +500,7 @@ export function LiveConsole() {
         case 'error':
           setError(event.message);
           setStatus('error');
-          appendEvent(`Ошибка Gemini: ${event.message}`);
+          appendEvent(`РћС€РёР±РєР° Gemini: ${event.message}`);
           return;
       }
     },
@@ -449,7 +508,12 @@ export function LiveConsole() {
   );
 
   const fetchEphemeralToken = useCallback(
-    async (searchEnabled: boolean, thinkingLevelValue: LiveThinkingLevel, modelId: LiveModelId) => {
+    async (
+      searchEnabled: boolean,
+      thinkingLevelValue: LiveThinkingLevel,
+      modelId: LiveModelId,
+      googleCalendarEnabled: boolean,
+    ) => {
     const response = await fetch('/api/live-token', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -457,13 +521,14 @@ export function LiveConsole() {
         webSearchEnabled: searchEnabled,
         thinkingLevel: thinkingLevelValue,
         model: modelId,
+        googleCalendarEnabled,
       }),
     });
 
     const data = (await response.json()) as TokenPayload | { error: string };
 
     if (!response.ok || !('token' in data)) {
-      throw new Error('error' in data ? data.error : 'Не удалось получить временный токен.');
+      throw new Error('error' in data ? data.error : 'РќРµ СѓРґР°Р»РѕСЃСЊ РїРѕР»СѓС‡РёС‚СЊ РІСЂРµРјРµРЅРЅС‹Р№ С‚РѕРєРµРЅ.');
     }
 
     return data;
@@ -484,7 +549,7 @@ export function LiveConsole() {
         modelUsesTavilySearch(modelId) &&
         functionCalls.some((call) => call.name === TAVILY_SEARCH_FUNCTION_NAME)
       ) {
-        appendEvent('Выполняется Tavily-поиск для ответа модели.');
+        appendEvent('Р’С‹РїРѕР»РЅСЏРµС‚СЃСЏ Tavily-РїРѕРёСЃРє РґР»СЏ РѕС‚РІРµС‚Р° РјРѕРґРµР»Рё.');
       }
 
       const response = await fetch('/api/live-tools', {
@@ -493,6 +558,7 @@ export function LiveConsole() {
         body: JSON.stringify({
           functionCalls,
           model: modelId,
+          googleCalendarAuth,
         }),
       });
 
@@ -508,13 +574,13 @@ export function LiveConsole() {
 
       if (!response.ok || !('functionResponses' in data)) {
         throw new Error(
-          'error' in data ? data.error : 'Не удалось выполнить вызов инструмента.',
+          'error' in data ? data.error : 'РќРµ СѓРґР°Р»РѕСЃСЊ РІС‹РїРѕР»РЅРёС‚СЊ РІС‹Р·РѕРІ РёРЅСЃС‚СЂСѓРјРµРЅС‚Р°.',
         );
       }
 
       return data.functionResponses;
     },
-    [appendEvent],
+    [appendEvent, googleCalendarAuth],
   );
 
   useEffect(() => {
@@ -530,7 +596,85 @@ export function LiveConsole() {
     if (savedKey) {
       setApiKeyInput(savedKey);
       setAuthMode('tab-api-key');
-      appendEvent('API-ключ загружен из этого браузера.');
+      appendEvent('API-РєР»СЋС‡ Р·Р°РіСЂСѓР¶РµРЅ РёР· СЌС‚РѕРіРѕ Р±СЂР°СѓР·РµСЂР°.');
+    }
+  }, [appendEvent]);
+
+  const handleDisconnectGoogleCalendar = useCallback(() => {
+    try {
+      window.localStorage.removeItem(GOOGLE_CALENDAR_AUTH_STORAGE_KEY);
+    } catch {
+      // localStorage may be unavailable; in-memory state is still cleared.
+    }
+
+    setGoogleCalendarAuth(null);
+    setIsGoogleCalendarConnecting(false);
+    appendEvent('Google Calendar disconnected for this browser.');
+  }, [appendEvent]);
+
+  const handleConnectGoogleCalendar = useCallback(() => {
+    const popup = window.open(
+      '/api/google-calendar/oauth/start',
+      'google-calendar-oauth',
+      'popup=yes,width=560,height=720',
+    );
+
+    if (!popup) {
+      setError('The browser blocked the Google Calendar popup.');
+      appendEvent('The browser blocked the Google Calendar popup.');
+      return;
+    }
+
+    googleCalendarPopupRef.current = popup;
+    setIsGoogleCalendarConnecting(true);
+    appendEvent('Opened the Google Calendar sign-in window.');
+  }, [appendEvent]);
+
+  useEffect(() => {
+    const handleMessage = (event: MessageEvent) => {
+      if (event.origin !== window.location.origin) {
+        return;
+      }
+
+      if (event.data?.type !== GOOGLE_CALENDAR_OAUTH_MESSAGE_TYPE) {
+        return;
+      }
+
+      const payload = event.data.payload as GoogleCalendarOAuthResult | undefined;
+      googleCalendarPopupRef.current?.close();
+      googleCalendarPopupRef.current = null;
+      setIsGoogleCalendarConnecting(false);
+
+      if (!payload) {
+        setError('Google Calendar OAuth returned an empty response.');
+        appendEvent('Google Calendar OAuth returned an empty response.');
+        return;
+      }
+
+      if (payload.status === 'success') {
+        setGoogleCalendarAuth(payload.auth);
+        setError(null);
+        appendEvent('Google Calendar connected successfully.');
+        return;
+      }
+
+      setError(payload.message);
+      appendEvent(`Google Calendar: ${payload.message}`);
+    };
+
+    window.addEventListener('message', handleMessage);
+
+    return () => {
+      window.removeEventListener('message', handleMessage);
+    };
+  }, [appendEvent]);
+
+  useEffect(() => {
+    const savedGoogleCalendarAuth = readGoogleCalendarAuth();
+
+    if (savedGoogleCalendarAuth) {
+      setGoogleCalendarAuth(savedGoogleCalendarAuth);
+      appendEvent('Google Calendar auth was restored from this browser.');
     }
   }, [appendEvent]);
 
@@ -540,7 +684,7 @@ export function LiveConsole() {
       const parsedTemp = parseFloat(savedTemp);
       if (!isNaN(parsedTemp) && parsedTemp >= 0 && parsedTemp <= 2) {
         setTemperature(parsedTemp);
-        appendEvent(`Температура ${parsedTemp} загружена из этого браузера.`);
+        appendEvent(`РўРµРјРїРµСЂР°С‚СѓСЂР° ${parsedTemp} Р·Р°РіСЂСѓР¶РµРЅР° РёР· СЌС‚РѕРіРѕ Р±СЂР°СѓР·РµСЂР°.`);
       }
     }
   }, [appendEvent]);
@@ -549,7 +693,7 @@ export function LiveConsole() {
     const savedVoice = window.localStorage.getItem(VOICE_STORAGE_KEY);
     if (savedVoice) {
       setVoice(savedVoice);
-      appendEvent(`Голос ${savedVoice} загружен из этого браузера.`);
+      appendEvent(`Р“РѕР»РѕСЃ ${savedVoice} Р·Р°РіСЂСѓР¶РµРЅ РёР· СЌС‚РѕРіРѕ Р±СЂР°СѓР·РµСЂР°.`);
     }
   }, [appendEvent]);
 
@@ -578,7 +722,7 @@ export function LiveConsole() {
     }
     const savedHost = window.localStorage.getItem(LIVE_PROXY_HOST_STORAGE_KEY);
     // Old builds persisted '' on first render, so an empty saved value is
-    // ambiguous — it could be a real "clear it" or just legacy noise. Treat
+    // ambiguous вЂ” it could be a real "clear it" or just legacy noise. Treat
     // both as "use the default" so the field never appears blank.
     if (savedHost !== null && savedHost.trim().length > 0) {
       setLiveProxyHost(savedHost);
@@ -699,7 +843,7 @@ export function LiveConsole() {
       setHasResumptionHandle(true);
     }
     // If a handle exists but was issued by a different model, we silently
-    // discard it — resumption handles are model-specific and Gemini rejects
+    // discard it вЂ” resumption handles are model-specific and Gemini rejects
     // them with "Invalid session handle" if reused across models.
     // We intentionally do NOT run this effect when `model` changes; the
     // model-change effect below is responsible for clearing the handle.
@@ -749,20 +893,20 @@ export function LiveConsole() {
     try {
       window.localStorage.setItem(SYSTEM_INSTRUCTION_STORAGE_KEY, systemInstruction);
     } catch {
-      // localStorage may be full or disabled; ignore — in-memory state still works.
+      // localStorage may be full or disabled; ignore вЂ” in-memory state still works.
     }
   }, [systemInstruction]);
 
   // Load saved presets and the previously-active preset name on mount. The
-  // working copy of settings (temperature, voice, …) is restored separately
-  // from each setting's own localStorage key — that's how a tab reload keeps
+  // working copy of settings (temperature, voice, вЂ¦) is restored separately
+  // from each setting's own localStorage key вЂ” that's how a tab reload keeps
   // your in-progress edits even though they aren't saved into the preset.
   useEffect(() => {
     setPresets(readPresets());
     setActivePresetName(readActivePresetName());
   }, []);
 
-  /** Apply a preset's settings into the working state. Pure setter calls —
+  /** Apply a preset's settings into the working state. Pure setter calls вЂ”
    *  the "active preset name" is updated separately by the callers below. */
   const applyPresetSettings = useCallback((settings: PresetSettings) => {
     setSystemInstruction(settings.systemInstruction);
@@ -802,9 +946,9 @@ export function LiveConsole() {
     }
   }, [isCameraEnabled, isCameraFloating, cameraStreamVersion]);
 
-  // The current "working copy" of preset settings — what the UI actually
+  // The current "working copy" of preset settings вЂ” what the UI actually
   // shows. Compared against the saved preset to decide if there are
-  // unsaved edits ("modified •").
+  // unsaved edits ("modified вЂў").
   const currentSettings: PresetSettings = {
     systemInstruction,
     model,
@@ -820,7 +964,7 @@ export function LiveConsole() {
 
   // Compare working copy to whatever is "saved" right now: either the
   // active preset's stored values, or the standard defaults when no preset
-  // is selected. If they differ we render the "•" indicator and enable the
+  // is selected. If they differ we render the "вЂў" indicator and enable the
   // "Update preset" button.
   const baselineSettings: PresetSettings = activePreset
     ? {
@@ -844,7 +988,7 @@ export function LiveConsole() {
   const loadStandardPreset = useCallback(() => {
     applyPresetSettings(DEFAULT_PRESET_SETTINGS);
     persistActivePresetName(null);
-    appendEvent('Загружены стандартные настройки. Применятся при следующем запуске сессии.');
+    appendEvent('Р—Р°РіСЂСѓР¶РµРЅС‹ СЃС‚Р°РЅРґР°СЂС‚РЅС‹Рµ РЅР°СЃС‚СЂРѕР№РєРё. РџСЂРёРјРµРЅСЏС‚СЃСЏ РїСЂРё СЃР»РµРґСѓСЋС‰РµРј Р·Р°РїСѓСЃРєРµ СЃРµСЃСЃРёРё.');
   }, [appendEvent, applyPresetSettings, persistActivePresetName]);
 
   const loadPresetByName = useCallback(
@@ -861,7 +1005,7 @@ export function LiveConsole() {
         thinkingLevel: preset.thinkingLevel,
       });
       persistActivePresetName(name);
-      appendEvent(`Загружен пресет «${name}». Применится при следующем запуске сессии.`);
+      appendEvent(`Р—Р°РіСЂСѓР¶РµРЅ РїСЂРµСЃРµС‚ В«${name}В». РџСЂРёРјРµРЅРёС‚СЃСЏ РїСЂРё СЃР»РµРґСѓСЋС‰РµРј Р·Р°РїСѓСЃРєРµ СЃРµСЃСЃРёРё.`);
     },
     [appendEvent, applyPresetSettings, persistActivePresetName, presets],
   );
@@ -880,7 +1024,7 @@ export function LiveConsole() {
   const saveAsNewPreset = useCallback(() => {
     const name = newPresetName.trim();
     if (!name) {
-      appendEvent('Введи имя пресета перед сохранением.');
+      appendEvent('Р’РІРµРґРё РёРјСЏ РїСЂРµСЃРµС‚Р° РїРµСЂРµРґ СЃРѕС…СЂР°РЅРµРЅРёРµРј.');
       return;
     }
     setPresets((current) => {
@@ -895,7 +1039,7 @@ export function LiveConsole() {
     });
     persistActivePresetName(name);
     setNewPresetName('');
-    appendEvent(`Пресет «${name}» сохранён.`);
+    appendEvent(`РџСЂРµСЃРµС‚ В«${name}В» СЃРѕС…СЂР°РЅС‘РЅ.`);
   }, [appendEvent, currentSettings, newPresetName, persistActivePresetName]);
 
   const updateCurrentPreset = useCallback(() => {
@@ -909,7 +1053,7 @@ export function LiveConsole() {
       writePresets(updated);
       return updated;
     });
-    appendEvent(`Пресет «${name}» обновлён текущими настройками.`);
+    appendEvent(`РџСЂРµСЃРµС‚ В«${name}В» РѕР±РЅРѕРІР»С‘РЅ С‚РµРєСѓС‰РёРјРё РЅР°СЃС‚СЂРѕР№РєР°РјРё.`);
   }, [activePresetName, appendEvent, currentSettings]);
 
   const deleteCurrentPreset = useCallback(() => {
@@ -920,10 +1064,10 @@ export function LiveConsole() {
       writePresets(updated);
       return updated;
     });
-    // Drop the active selection but keep the working copy as-is — the user
+    // Drop the active selection but keep the working copy as-is вЂ” the user
     // hasn't asked to lose their current values, only the saved slot.
     persistActivePresetName(null);
-    appendEvent(`Пресет «${name}» удалён.`);
+    appendEvent(`РџСЂРµСЃРµС‚ В«${name}В» СѓРґР°Р»С‘РЅ.`);
   }, [activePresetName, appendEvent, persistActivePresetName]);
 
   const flashCopyConfirmation = useCallback(() => {
@@ -948,10 +1092,10 @@ export function LiveConsole() {
 
   const sharePreset = useCallback(async () => {
     if (!activePreset) {
-      appendEvent('Нечего шарить — сначала выбери или сохрани пресет.');
+      appendEvent('РќРµС‡РµРіРѕ С€Р°СЂРёС‚СЊ вЂ” СЃРЅР°С‡Р°Р»Р° РІС‹Р±РµСЂРё РёР»Рё СЃРѕС…СЂР°РЅРё РїСЂРµСЃРµС‚.');
       return;
     }
-    // Re-encode from the saved snapshot, not from the dirty working copy —
+    // Re-encode from the saved snapshot, not from the dirty working copy вЂ”
     // so receivers get the same preset that's saved on this device, and
     // any unsaved local edits stay local.
     const encoded = encodePresetShareString(activePreset);
@@ -959,10 +1103,10 @@ export function LiveConsole() {
       if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
         await navigator.clipboard.writeText(encoded);
         flashCopyConfirmation();
-        appendEvent(`Пресет «${activePreset.name}» скопирован в буфер обмена.`);
+        appendEvent(`РџСЂРµСЃРµС‚ В«${activePreset.name}В» СЃРєРѕРїРёСЂРѕРІР°РЅ РІ Р±СѓС„РµСЂ РѕР±РјРµРЅР°.`);
         return;
       }
-      // No async clipboard API (rare, e.g. http on iOS) — fall back to
+      // No async clipboard API (rare, e.g. http on iOS) вЂ” fall back to
       // showing the string in the import dialog so the user can copy it.
       throw new Error('clipboard unavailable');
     } catch {
@@ -970,7 +1114,7 @@ export function LiveConsole() {
       setImportError(null);
       setIsImportOpen(true);
       appendEvent(
-        'Не удалось скопировать автоматически — строка пресета показана ниже, скопируй вручную.',
+        'РќРµ СѓРґР°Р»РѕСЃСЊ СЃРєРѕРїРёСЂРѕРІР°С‚СЊ Р°РІС‚РѕРјР°С‚РёС‡РµСЃРєРё вЂ” СЃС‚СЂРѕРєР° РїСЂРµСЃРµС‚Р° РїРѕРєР°Р·Р°РЅР° РЅРёР¶Рµ, СЃРєРѕРїРёСЂСѓР№ РІСЂСѓС‡РЅСѓСЋ.',
       );
     }
   }, [activePreset, appendEvent, flashCopyConfirmation]);
@@ -990,7 +1134,7 @@ export function LiveConsole() {
       writePresets(updated);
       return updated;
     });
-    // Apply the imported preset right away — that's what makes the
+    // Apply the imported preset right away вЂ” that's what makes the
     // "share to another device" flow feel like one click.
     applyPresetSettings({
       systemInstruction: decoded.systemInstruction,
@@ -1006,10 +1150,10 @@ export function LiveConsole() {
     setImportError(null);
     setIsImportOpen(false);
     if (chosenName === decoded.name) {
-      appendEvent(`Импортирован пресет «${chosenName}» и применён.`);
+      appendEvent(`РРјРїРѕСЂС‚РёСЂРѕРІР°РЅ РїСЂРµСЃРµС‚ В«${chosenName}В» Рё РїСЂРёРјРµРЅС‘РЅ.`);
     } else {
       appendEvent(
-        `Уже есть пресет с именем «${decoded.name}» — импортирован как «${chosenName}» и применён.`,
+        `РЈР¶Рµ РµСЃС‚СЊ РїСЂРµСЃРµС‚ СЃ РёРјРµРЅРµРј В«${decoded.name}В» вЂ” РёРјРїРѕСЂС‚РёСЂРѕРІР°РЅ РєР°Рє В«${chosenName}В» Рё РїСЂРёРјРµРЅС‘РЅ.`,
       );
     }
   }, [appendEvent, applyPresetSettings, importText, persistActivePresetName]);
@@ -1038,7 +1182,7 @@ export function LiveConsole() {
     }
     dropStoredResumptionHandle();
     setMessages([]);
-    appendEvent('Память диалога очищена. Запустите сессию заново — диалог начнётся с нуля.');
+    appendEvent('РџР°РјСЏС‚СЊ РґРёР°Р»РѕРіР° РѕС‡РёС‰РµРЅР°. Р—Р°РїСѓСЃС‚РёС‚Рµ СЃРµСЃСЃРёСЋ Р·Р°РЅРѕРІРѕ вЂ” РґРёР°Р»РѕРі РЅР°С‡РЅС‘С‚СЃСЏ СЃ РЅСѓР»СЏ.');
   }, [appendEvent, dropStoredResumptionHandle, teardownSession]);
 
   useEffect(() => {
@@ -1080,7 +1224,7 @@ export function LiveConsole() {
 
   const startMicrophone = useCallback(async () => {
     if (!clientRef.current) {
-      throw new Error('Сначала запустите сессию, а потом включайте микрофон.');
+      throw new Error('РЎРЅР°С‡Р°Р»Р° Р·Р°РїСѓСЃС‚РёС‚Рµ СЃРµСЃСЃРёСЋ, Р° РїРѕС‚РѕРј РІРєР»СЋС‡Р°Р№С‚Рµ РјРёРєСЂРѕС„РѕРЅ.');
     }
 
     if (!microphoneRef.current) {
@@ -1092,23 +1236,23 @@ export function LiveConsole() {
     });
 
     setIsMicEnabled(true);
-    appendEvent('Микрофон включен.');
+    appendEvent('РњРёРєСЂРѕС„РѕРЅ РІРєР»СЋС‡РµРЅ.');
   }, [appendEvent]);
 
   const startCamera = useCallback(async () => {
     if (!clientRef.current) {
-      throw new Error('Сначала запустите сессию, а потом включайте камеру.');
+      throw new Error('РЎРЅР°С‡Р°Р»Р° Р·Р°РїСѓСЃС‚РёС‚Рµ СЃРµСЃСЃРёСЋ, Р° РїРѕС‚РѕРј РІРєР»СЋС‡Р°Р№С‚Рµ РєР°РјРµСЂСѓ.');
     }
 
     if (!videoRef.current) {
-      throw new Error('Не найден элемент предпросмотра камеры.');
+      throw new Error('РќРµ РЅР°Р№РґРµРЅ СЌР»РµРјРµРЅС‚ РїСЂРµРґРїСЂРѕСЃРјРѕС‚СЂР° РєР°РјРµСЂС‹.');
     }
 
-    // Camera and screen share both fight for the same video channel — only
+    // Camera and screen share both fight for the same video channel вЂ” only
     // one source should be streaming frames at a time.
     if (screenRef.current?.isActive()) {
       stopScreen();
-      appendEvent('Трансляция экрана остановлена — включена камера.');
+      appendEvent('РўСЂР°РЅСЃР»СЏС†РёСЏ СЌРєСЂР°РЅР° РѕСЃС‚Р°РЅРѕРІР»РµРЅР° вЂ” РІРєР»СЋС‡РµРЅР° РєР°РјРµСЂР°.');
     }
 
     if (!cameraRef.current) {
@@ -1122,21 +1266,21 @@ export function LiveConsole() {
     setIsCameraEnabled(true);
     setIsCameraFloating(true);
     setCameraStreamVersion((v) => v + 1);
-    appendEvent(`Камера включена (${cameraFacingMode === 'user' ? 'фронтальная' : 'основная'}).`);
+    appendEvent(`РљР°РјРµСЂР° РІРєР»СЋС‡РµРЅР° (${cameraFacingMode === 'user' ? 'С„СЂРѕРЅС‚Р°Р»СЊРЅР°СЏ' : 'РѕСЃРЅРѕРІРЅР°СЏ'}).`);
   }, [appendEvent, cameraFacingMode, stopScreen]);
 
   const startScreen = useCallback(async () => {
     if (!clientRef.current) {
-      throw new Error('Сначала запустите сессию, а потом включайте трансляцию экрана.');
+      throw new Error('РЎРЅР°С‡Р°Р»Р° Р·Р°РїСѓСЃС‚РёС‚Рµ СЃРµСЃСЃРёСЋ, Р° РїРѕС‚РѕРј РІРєР»СЋС‡Р°Р№С‚Рµ С‚СЂР°РЅСЃР»СЏС†РёСЋ СЌРєСЂР°РЅР°.');
     }
 
     if (!screenVideoRef.current) {
-      throw new Error('Не найден элемент для предпросмотра экрана.');
+      throw new Error('РќРµ РЅР°Р№РґРµРЅ СЌР»РµРјРµРЅС‚ РґР»СЏ РїСЂРµРґРїСЂРѕСЃРјРѕС‚СЂР° СЌРєСЂР°РЅР°.');
     }
 
     if (isCameraEnabled) {
       stopCamera();
-      appendEvent('Камера выключена — включена трансляция экрана.');
+      appendEvent('РљР°РјРµСЂР° РІС‹РєР»СЋС‡РµРЅР° вЂ” РІРєР»СЋС‡РµРЅР° С‚СЂР°РЅСЃР»СЏС†РёСЏ СЌРєСЂР°РЅР°.');
     }
 
     if (!screenRef.current) {
@@ -1154,16 +1298,16 @@ export function LiveConsole() {
         maxLongestSide: screenMaxLongestSide,
       },
       () => {
-        // User clicked browser's native «Stop sharing» button.
+        // User clicked browser's native В«Stop sharingВ» button.
         screenRef.current?.stop(screenVideoRef.current);
         setIsScreenEnabled(false);
-        appendEvent('Трансляция экрана остановлена.');
+        appendEvent('РўСЂР°РЅСЃР»СЏС†РёСЏ СЌРєСЂР°РЅР° РѕСЃС‚Р°РЅРѕРІР»РµРЅР°.');
       },
     );
 
     setIsScreenEnabled(true);
     appendEvent(
-      `Трансляция экрана включена (${screenFormat.toUpperCase()}, ${describeMaxLongestSide(screenMaxLongestSide)}).`,
+      `РўСЂР°РЅСЃР»СЏС†РёСЏ СЌРєСЂР°РЅР° РІРєР»СЋС‡РµРЅР° (${screenFormat.toUpperCase()}, ${describeMaxLongestSide(screenMaxLongestSide)}).`,
     );
   }, [appendEvent, isCameraEnabled, screenFormat, screenJpegQuality, screenMaxLongestSide, stopCamera]);
 
@@ -1173,22 +1317,22 @@ export function LiveConsole() {
     try {
       if (isScreenEnabled) {
         stopScreen();
-        appendEvent('Трансляция экрана выключена.');
+        appendEvent('РўСЂР°РЅСЃР»СЏС†РёСЏ СЌРєСЂР°РЅР° РІС‹РєР»СЋС‡РµРЅР°.');
         return;
       }
 
       await startScreen();
     } catch (toggleError) {
       // The browser surface picker raises NotAllowedError when the user
-      // clicks Cancel — that's not really an error, swallow it quietly.
+      // clicks Cancel вЂ” that's not really an error, swallow it quietly.
       const isCancel =
         toggleError instanceof Error &&
         (toggleError.name === 'NotAllowedError' || toggleError.name === 'AbortError');
       if (isCancel) {
-        appendEvent('Трансляция экрана отменена.');
+        appendEvent('РўСЂР°РЅСЃР»СЏС†РёСЏ СЌРєСЂР°РЅР° РѕС‚РјРµРЅРµРЅР°.');
         return;
       }
-      const message = toggleError instanceof Error ? toggleError.message : 'Не удалось включить трансляцию экрана.';
+      const message = toggleError instanceof Error ? toggleError.message : 'РќРµ СѓРґР°Р»РѕСЃСЊ РІРєР»СЋС‡РёС‚СЊ С‚СЂР°РЅСЃР»СЏС†РёСЋ СЌРєСЂР°РЅР°.';
       setError(message);
       appendEvent(message);
     }
@@ -1209,6 +1353,10 @@ export function LiveConsole() {
         teardownSession();
         setStatus('connecting');
         const trimmedApiKey = apiKeyInput.trim();
+        const effectiveSystemInstruction =
+          systemInstruction.trim().length > 0
+            ? buildEffectiveSystemInstruction(systemInstruction)
+            : undefined;
 
         if (!audioPlayerRef.current) {
           audioPlayerRef.current = new BrowserAudioPlayer();
@@ -1221,15 +1369,15 @@ export function LiveConsole() {
         if (trimmedApiKey) {
           setAuthMode('tab-api-key');
           setSessionExpiry(null);
-          appendEvent('Используется API-ключ, введённый в этом браузере.');
+          appendEvent('РСЃРїРѕР»СЊР·СѓРµС‚СЃСЏ API-РєР»СЋС‡, РІРІРµРґС‘РЅРЅС‹Р№ РІ СЌС‚РѕРј Р±СЂР°СѓР·РµСЂРµ.');
           appendEvent(
-            `Параметры сессии: температура ${temperature}, голос ${voice}, размышления ${thinkingLevel}.`,
+            `РџР°СЂР°РјРµС‚СЂС‹ СЃРµСЃСЃРёРё: С‚РµРјРїРµСЂР°С‚СѓСЂР° ${temperature}, РіРѕР»РѕСЃ ${voice}, СЂР°Р·РјС‹С€Р»РµРЅРёСЏ ${thinkingLevel}.`,
           );
           const trimmedProxyHost = liveProxyHost.trim();
           const effectiveLiveServiceHost =
             liveProxyEnabled && trimmedProxyHost.length > 0 ? trimmedProxyHost : undefined;
           if (effectiveLiveServiceHost) {
-            appendEvent(`Соединение через прокси: ${effectiveLiveServiceHost}`);
+            appendEvent(`РЎРѕРµРґРёРЅРµРЅРёРµ С‡РµСЂРµР· РїСЂРѕРєСЃРё: ${effectiveLiveServiceHost}`);
           }
           client = new GeminiLiveClient(
             { apiKey: trimmedApiKey },
@@ -1238,17 +1386,17 @@ export function LiveConsole() {
                 setStatus('active');
                 appendEvent(
                   resumptionHandleRef.current
-                    ? 'Подключение к Gemini Live установлено. Продолжаем прошлый диалог.'
-                    : 'Подключение к Gemini Live установлено.',
+                    ? 'РџРѕРґРєР»СЋС‡РµРЅРёРµ Рє Gemini Live СѓСЃС‚Р°РЅРѕРІР»РµРЅРѕ. РџСЂРѕРґРѕР»Р¶Р°РµРј РїСЂРѕС€Р»С‹Р№ РґРёР°Р»РѕРі.'
+                    : 'РџРѕРґРєР»СЋС‡РµРЅРёРµ Рє Gemini Live СѓСЃС‚Р°РЅРѕРІР»РµРЅРѕ.',
                 );
               },
               onClose: (reason) => {
                 setStatus('stopped');
-                appendEvent(`Сессия закрыта: ${reason}`);
+                appendEvent(`РЎРµСЃСЃРёСЏ Р·Р°РєСЂС‹С‚Р°: ${reason}`);
                 if (isStaleHandleReason(reason) && resumptionHandleRef.current) {
                   dropStoredResumptionHandle();
                   appendEvent(
-                    'Сохранённый handle диалога протух. Он очищен — нажми «Запустить сессию» ещё раз, диалог начнётся с нуля.',
+                    'РЎРѕС…СЂР°РЅС‘РЅРЅС‹Р№ handle РґРёР°Р»РѕРіР° РїСЂРѕС‚СѓС…. РћРЅ РѕС‡РёС‰РµРЅ вЂ” РЅР°Р¶РјРё В«Р—Р°РїСѓСЃС‚РёС‚СЊ СЃРµСЃСЃРёСЋВ» РµС‰С‘ СЂР°Р·, РґРёР°Р»РѕРі РЅР°С‡РЅС‘С‚СЃСЏ СЃ РЅСѓР»СЏ.',
                   );
                 }
               },
@@ -1267,21 +1415,23 @@ export function LiveConsole() {
             webSearchEnabled,
             thinkingLevelSupported ? thinkingLevel : undefined,
             memoryEnabled ? resumptionHandleRef.current ?? undefined : undefined,
-            systemInstruction.trim().length > 0 ? systemInstruction : undefined,
+            effectiveSystemInstruction,
             model,
             language || undefined,
             effectiveLiveServiceHost,
+            googleCalendarAuth,
           );
         } else {
           setAuthMode('server-token');
-          appendEvent('Запрашивается временный токен через серверный маршрут.');
+          appendEvent('Р—Р°РїСЂР°С€РёРІР°РµС‚СЃСЏ РІСЂРµРјРµРЅРЅС‹Р№ С‚РѕРєРµРЅ С‡РµСЂРµР· СЃРµСЂРІРµСЂРЅС‹Р№ РјР°СЂС€СЂСѓС‚.');
           appendEvent(
-            `Параметры сессии: температура ${temperature}, голос ${voice}, размышления ${thinkingLevelSupported ? thinkingLevel : 'не поддерживаются для этой модели'}.`,
+            `РџР°СЂР°РјРµС‚СЂС‹ СЃРµСЃСЃРёРё: С‚РµРјРїРµСЂР°С‚СѓСЂР° ${temperature}, РіРѕР»РѕСЃ ${voice}, СЂР°Р·РјС‹С€Р»РµРЅРёСЏ ${thinkingLevelSupported ? thinkingLevel : 'РЅРµ РїРѕРґРґРµСЂР¶РёРІР°СЋС‚СЃСЏ РґР»СЏ СЌС‚РѕР№ РјРѕРґРµР»Рё'}.`,
           );
           const tokenData = await fetchEphemeralToken(
             webSearchEnabled,
             thinkingLevelSupported ? thinkingLevel : LIVE_THINKING_LEVEL_DEFAULT,
             model,
+            googleCalendarConnected,
           );
           setSessionExpiry(tokenData.expireTime);
           client = new GeminiLiveClient(
@@ -1291,17 +1441,17 @@ export function LiveConsole() {
                 setStatus('active');
                 appendEvent(
                   resumptionHandleRef.current
-                    ? 'Подключение к Gemini Live через прокси установлено. Продолжаем прошлый диалог.'
-                    : 'Подключение к Gemini Live через прокси установлено.',
+                    ? 'РџРѕРґРєР»СЋС‡РµРЅРёРµ Рє Gemini Live С‡РµСЂРµР· РїСЂРѕРєСЃРё СѓСЃС‚Р°РЅРѕРІР»РµРЅРѕ. РџСЂРѕРґРѕР»Р¶Р°РµРј РїСЂРѕС€Р»С‹Р№ РґРёР°Р»РѕРі.'
+                    : 'РџРѕРґРєР»СЋС‡РµРЅРёРµ Рє Gemini Live С‡РµСЂРµР· РїСЂРѕРєСЃРё СѓСЃС‚Р°РЅРѕРІР»РµРЅРѕ.',
                 );
               },
               onClose: (reason) => {
                 setStatus('stopped');
-                appendEvent(`Сессия закрыта: ${reason}`);
+                appendEvent(`РЎРµСЃСЃРёСЏ Р·Р°РєСЂС‹С‚Р°: ${reason}`);
                 if (isStaleHandleReason(reason) && resumptionHandleRef.current) {
                   dropStoredResumptionHandle();
                   appendEvent(
-                    'Сохранённый handle диалога протух. Он очищен — нажми «Запустить сессию» ещё раз, диалог начнётся с нуля.',
+                    'РЎРѕС…СЂР°РЅС‘РЅРЅС‹Р№ handle РґРёР°Р»РѕРіР° РїСЂРѕС‚СѓС…. РћРЅ РѕС‡РёС‰РµРЅ вЂ” РЅР°Р¶РјРё В«Р—Р°РїСѓСЃС‚РёС‚СЊ СЃРµСЃСЃРёСЋВ» РµС‰С‘ СЂР°Р·, РґРёР°Р»РѕРі РЅР°С‡РЅС‘С‚СЃСЏ СЃ РЅСѓР»СЏ.',
                   );
                 }
               },
@@ -1320,9 +1470,11 @@ export function LiveConsole() {
             webSearchEnabled,
             thinkingLevelSupported ? thinkingLevel : undefined,
             memoryEnabled ? resumptionHandleRef.current ?? undefined : undefined,
-            systemInstruction.trim().length > 0 ? systemInstruction : undefined,
+            effectiveSystemInstruction,
             model,
             language || undefined,
+            undefined,
+            googleCalendarAuth,
           );
         }
 
@@ -1332,13 +1484,13 @@ export function LiveConsole() {
         try {
           await startMicrophone();
         } catch (micError) {
-          const message = micError instanceof Error ? micError.message : 'Не удалось запустить микрофон.';
+          const message = micError instanceof Error ? micError.message : 'РќРµ СѓРґР°Р»РѕСЃСЊ Р·Р°РїСѓСЃС‚РёС‚СЊ РјРёРєСЂРѕС„РѕРЅ.';
           setError(message);
           appendEvent(message);
         }
       } catch (sessionError) {
         const message =
-          sessionError instanceof Error ? sessionError.message : 'Не удалось запустить сессию.';
+          sessionError instanceof Error ? sessionError.message : 'РќРµ СѓРґР°Р»РѕСЃСЊ Р·Р°РїСѓСЃС‚РёС‚СЊ СЃРµСЃСЃРёСЋ.';
         setError(message);
         setStatus('error');
         appendEvent(message);
@@ -1346,13 +1498,13 @@ export function LiveConsole() {
         setIsBusy(false);
       }
     },
-    [apiKeyInput, appendEvent, executeToolCalls, fetchEphemeralToken, handleLiveEvent, startMicrophone, teardownSession, temperature, voice, webSearchEnabled, thinkingLevel, thinkingLevelSupported, systemInstruction, model, language, memoryEnabled],
+    [apiKeyInput, appendEvent, executeToolCalls, fetchEphemeralToken, googleCalendarAuth, googleCalendarConnected, handleLiveEvent, startMicrophone, teardownSession, temperature, voice, webSearchEnabled, thinkingLevel, thinkingLevelSupported, systemInstruction, model, language, memoryEnabled],
   );
 
   const stopConversation = useCallback(() => {
     teardownSession();
     setStatus('stopped');
-    appendEvent('Диалог остановлен.');
+    appendEvent('Р”РёР°Р»РѕРі РѕСЃС‚Р°РЅРѕРІР»РµРЅ.');
   }, [appendEvent, teardownSession]);
 
   const handleToggleMicrophone = useCallback(async () => {
@@ -1361,13 +1513,13 @@ export function LiveConsole() {
     try {
       if (isMicEnabled) {
         stopMicrophone();
-        appendEvent('Микрофон выключен.');
+        appendEvent('РњРёРєСЂРѕС„РѕРЅ РІС‹РєР»СЋС‡РµРЅ.');
         return;
       }
 
       await startMicrophone();
     } catch (toggleError) {
-      const message = toggleError instanceof Error ? toggleError.message : 'Не удалось переключить микрофон.';
+      const message = toggleError instanceof Error ? toggleError.message : 'РќРµ СѓРґР°Р»РѕСЃСЊ РїРµСЂРµРєР»СЋС‡РёС‚СЊ РјРёРєСЂРѕС„РѕРЅ.';
       setError(message);
       appendEvent(message);
     }
@@ -1379,13 +1531,13 @@ export function LiveConsole() {
     try {
       if (isCameraEnabled) {
         stopCamera();
-        appendEvent('Камера выключена.');
+        appendEvent('РљР°РјРµСЂР° РІС‹РєР»СЋС‡РµРЅР°.');
         return;
       }
 
       await startCamera();
     } catch (toggleError) {
-      const message = toggleError instanceof Error ? toggleError.message : 'Не удалось переключить камеру.';
+      const message = toggleError instanceof Error ? toggleError.message : 'РќРµ СѓРґР°Р»РѕСЃСЊ РїРµСЂРµРєР»СЋС‡РёС‚СЊ РєР°РјРµСЂСѓ.';
       setError(message);
       appendEvent(message);
     }
@@ -1394,7 +1546,7 @@ export function LiveConsole() {
   const handleClearApiKey = useCallback(() => {
     setApiKeyInput('');
     window.localStorage.removeItem(API_KEY_STORAGE_KEY);
-    appendEvent('Сохранённый API-ключ браузера удалён.');
+    appendEvent('РЎРѕС…СЂР°РЅС‘РЅРЅС‹Р№ API-РєР»СЋС‡ Р±СЂР°СѓР·РµСЂР° СѓРґР°Р»С‘РЅ.');
   }, [appendEvent]);
 
   const handleSendText = useCallback(() => {
@@ -1415,7 +1567,7 @@ export function LiveConsole() {
     const messageText = trimmed.length > 0
       ? trimmed
       : attachment
-        ? '🖼 Картинка'
+        ? 'рџ–ј РљР°СЂС‚РёРЅРєР°'
         : '';
 
     if (trimmed) {
@@ -1423,7 +1575,7 @@ export function LiveConsole() {
     } else if (attachment) {
       // Without any accompanying text Liv often does nothing with a bare
       // image, so nudge it to actually look at and describe the picture.
-      clientRef.current.sendText('Опиши, что на этой картинке.');
+      clientRef.current.sendText('РћРїРёС€Рё, С‡С‚Рѕ РЅР° СЌС‚РѕР№ РєР°СЂС‚РёРЅРєРµ.');
     }
 
     setMessages((current) => [
@@ -1452,7 +1604,7 @@ export function LiveConsole() {
         });
         setPendingAttachment(prepared);
       } catch (e) {
-        const message = e instanceof Error ? e.message : 'Не удалось прочитать картинку.';
+        const message = e instanceof Error ? e.message : 'РќРµ СѓРґР°Р»РѕСЃСЊ РїСЂРѕС‡РёС‚Р°С‚СЊ РєР°СЂС‚РёРЅРєСѓ.';
         setAttachmentError(message);
         setPendingAttachment(null);
       }
@@ -1519,7 +1671,7 @@ export function LiveConsole() {
       <div className="console-panel status-panel">
         <div className="status-grid status-grid--single">
           <div className="status-card">
-            <span className="status-label">Состояние</span>
+            <span className="status-label">РЎРѕСЃС‚РѕСЏРЅРёРµ</span>
             <strong data-state={status}>{STATUS_LABELS[status]}</strong>
           </div>
         </div>
@@ -1531,14 +1683,14 @@ export function LiveConsole() {
             onChange={(event) => {
               applySelectedPresetValue(event.target.value);
             }}
-            aria-label="Загрузить пресет"
+            aria-label="Р—Р°РіСЂСѓР·РёС‚СЊ РїСЂРµСЃРµС‚"
           >
             <option value={STANDARD_PRESET_VALUE}>
-              {`Стандартный${activePresetName === null && isDirty ? ' •' : ''}`}
+              {`РЎС‚Р°РЅРґР°СЂС‚РЅС‹Р№${activePresetName === null && isDirty ? ' вЂў' : ''}`}
             </option>
             {presets.map((preset) => (
               <option key={preset.name} value={preset.name}>
-                {`${preset.name}${preset.name === activePresetName && isDirty ? ' •' : ''}`}
+                {`${preset.name}${preset.name === activePresetName && isDirty ? ' вЂў' : ''}`}
               </option>
             ))}
           </select>
@@ -1546,10 +1698,10 @@ export function LiveConsole() {
 
         <div className="controls-row controls-row--primary">
           <button className="primary-button" onClick={() => void startSession()} disabled={isBusy}>
-            Запустить сессию
+            Р—Р°РїСѓСЃС‚РёС‚СЊ СЃРµСЃСЃРёСЋ
           </button>
           <button className="secondary-button" onClick={stopConversation} disabled={!clientRef.current}>
-            Остановить
+            РћСЃС‚Р°РЅРѕРІРёС‚СЊ
           </button>
         </div>
 
@@ -1563,7 +1715,7 @@ export function LiveConsole() {
               onChange={(e) => setCameraFacingMode(e.target.value as 'user' | 'environment')}
               disabled={isCameraEnabled}
             />
-            Основная камера
+            РћСЃРЅРѕРІРЅР°СЏ РєР°РјРµСЂР°
           </label>
           <label>
             <input
@@ -1574,20 +1726,20 @@ export function LiveConsole() {
               onChange={(e) => setCameraFacingMode(e.target.value as 'user' | 'environment')}
               disabled={isCameraEnabled}
             />
-            Фронтальная камера
+            Р¤СЂРѕРЅС‚Р°Р»СЊРЅР°СЏ РєР°РјРµСЂР°
           </label>
         </div>
 
-        <div className="icon-row" role="toolbar" aria-label="Быстрые действия">
+        <div className="icon-row" role="toolbar" aria-label="Р‘С‹СЃС‚СЂС‹Рµ РґРµР№СЃС‚РІРёСЏ">
           <button
             type="button"
             className={`icon-button${isCameraEnabled ? ' icon-button--on' : ''}`}
             onClick={() => void handleToggleCamera()}
             disabled={!isSessionActive}
-            aria-label={isCameraEnabled ? 'Выключить камеру' : 'Включить камеру'}
-            title={isCameraEnabled ? 'Камера включена' : 'Камера выключена'}
+            aria-label={isCameraEnabled ? 'Р’С‹РєР»СЋС‡РёС‚СЊ РєР°РјРµСЂСѓ' : 'Р’РєР»СЋС‡РёС‚СЊ РєР°РјРµСЂСѓ'}
+            title={isCameraEnabled ? 'РљР°РјРµСЂР° РІРєР»СЋС‡РµРЅР°' : 'РљР°РјРµСЂР° РІС‹РєР»СЋС‡РµРЅР°'}
           >
-            <span aria-hidden="true">📷</span>
+            <span aria-hidden="true">рџ“·</span>
           </button>
           {canShareScreen ? (
             <button
@@ -1595,14 +1747,14 @@ export function LiveConsole() {
               className={`icon-button${isScreenEnabled ? ' icon-button--on' : ''}`}
               onClick={() => void handleToggleScreen()}
               disabled={!isSessionActive}
-              aria-label={isScreenEnabled ? 'Остановить трансляцию экрана' : 'Транслировать экран'}
+              aria-label={isScreenEnabled ? 'РћСЃС‚Р°РЅРѕРІРёС‚СЊ С‚СЂР°РЅСЃР»СЏС†РёСЋ СЌРєСЂР°РЅР°' : 'РўСЂР°РЅСЃР»РёСЂРѕРІР°С‚СЊ СЌРєСЂР°РЅ'}
               title={
                 isScreenEnabled
-                  ? 'Экран транслируется. Liv видит, что вы показываете.'
-                  : 'Транслировать экран — Liv будет видеть выбранное окно или весь экран.'
+                  ? 'Р­РєСЂР°РЅ С‚СЂР°РЅСЃР»РёСЂСѓРµС‚СЃСЏ. Liv РІРёРґРёС‚, С‡С‚Рѕ РІС‹ РїРѕРєР°Р·С‹РІР°РµС‚Рµ.'
+                  : 'РўСЂР°РЅСЃР»РёСЂРѕРІР°С‚СЊ СЌРєСЂР°РЅ вЂ” Liv Р±СѓРґРµС‚ РІРёРґРµС‚СЊ РІС‹Р±СЂР°РЅРЅРѕРµ РѕРєРЅРѕ РёР»Рё РІРµСЃСЊ СЌРєСЂР°РЅ.'
               }
             >
-              <span aria-hidden="true">🖥️</span>
+              <span aria-hidden="true">рџ–ҐпёЏ</span>
             </button>
           ) : null}
           <button
@@ -1610,29 +1762,29 @@ export function LiveConsole() {
             className={`icon-button${isMicEnabled ? ' icon-button--on' : ''}`}
             onClick={() => void handleToggleMicrophone()}
             disabled={!isSessionActive}
-            aria-label={isMicEnabled ? 'Выключить микрофон' : 'Включить микрофон'}
-            title={isMicEnabled ? 'Микрофон включен' : 'Микрофон выключен'}
+            aria-label={isMicEnabled ? 'Р’С‹РєР»СЋС‡РёС‚СЊ РјРёРєСЂРѕС„РѕРЅ' : 'Р’РєР»СЋС‡РёС‚СЊ РјРёРєСЂРѕС„РѕРЅ'}
+            title={isMicEnabled ? 'РњРёРєСЂРѕС„РѕРЅ РІРєР»СЋС‡РµРЅ' : 'РњРёРєСЂРѕС„РѕРЅ РІС‹РєР»СЋС‡РµРЅ'}
           >
-            <span aria-hidden="true">🎤</span>
+            <span aria-hidden="true">рџЋ¤</span>
           </button>
           <button
             type="button"
             className={`icon-button icon-button--memory${memoryEnabled ? ' icon-button--on' : ''}`}
             onClick={() => setMemoryEnabled((v) => !v)}
             disabled={!modelSupportsSessionResumption(model)}
-            aria-label={memoryEnabled ? 'Выключить память диалога' : 'Включить память диалога'}
+            aria-label={memoryEnabled ? 'Р’С‹РєР»СЋС‡РёС‚СЊ РїР°РјСЏС‚СЊ РґРёР°Р»РѕРіР°' : 'Р’РєР»СЋС‡РёС‚СЊ РїР°РјСЏС‚СЊ РґРёР°Р»РѕРіР°'}
             title={
               !modelSupportsSessionResumption(model)
-                ? 'У Gemini 2.5 (native audio) память между сессиями не поддерживается.'
+                ? 'РЈ Gemini 2.5 (native audio) РїР°РјСЏС‚СЊ РјРµР¶РґСѓ СЃРµСЃСЃРёСЏРјРё РЅРµ РїРѕРґРґРµСЂР¶РёРІР°РµС‚СЃСЏ.'
                 : memoryEnabled
-                  ? 'Память: вкл. Следующая сессия продолжит прошлый диалог.'
-                  : 'Память: выкл. Каждая сессия стартует с чистого листа.'
+                  ? 'РџР°РјСЏС‚СЊ: РІРєР». РЎР»РµРґСѓСЋС‰Р°СЏ СЃРµСЃСЃРёСЏ РїСЂРѕРґРѕР»Р¶РёС‚ РїСЂРѕС€Р»С‹Р№ РґРёР°Р»РѕРі.'
+                  : 'РџР°РјСЏС‚СЊ: РІС‹РєР». РљР°Р¶РґР°СЏ СЃРµСЃСЃРёСЏ СЃС‚Р°СЂС‚СѓРµС‚ СЃ С‡РёСЃС‚РѕРіРѕ Р»РёСЃС‚Р°.'
             }
           >
             <span aria-hidden="true" className="icon-stack">
-              🧠
+              рџ§ 
               <span className={`icon-badge${memoryEnabled ? ' icon-badge--on' : ' icon-badge--off'}`}>
-                {memoryEnabled ? '✓' : '×'}
+                {memoryEnabled ? 'вњ“' : 'Г—'}
               </span>
             </span>
           </button>
@@ -1641,10 +1793,10 @@ export function LiveConsole() {
             className="icon-button"
             onClick={clearSessionMemory}
             disabled={!hasResumptionHandle}
-            aria-label="Очистить память диалога"
-            title={hasResumptionHandle ? 'Очистить память диалога' : 'Очищать пока нечего — память пуста'}
+            aria-label="РћС‡РёСЃС‚РёС‚СЊ РїР°РјСЏС‚СЊ РґРёР°Р»РѕРіР°"
+            title={hasResumptionHandle ? 'РћС‡РёСЃС‚РёС‚СЊ РїР°РјСЏС‚СЊ РґРёР°Р»РѕРіР°' : 'РћС‡РёС‰Р°С‚СЊ РїРѕРєР° РЅРµС‡РµРіРѕ вЂ” РїР°РјСЏС‚СЊ РїСѓСЃС‚Р°'}
           >
-            <span aria-hidden="true">🧹</span>
+            <span aria-hidden="true">рџ§№</span>
           </button>
           {wakeLock.supported ? (
             <button
@@ -1653,16 +1805,16 @@ export function LiveConsole() {
               onClick={wakeLock.toggle}
               aria-label={
                 wakeLock.enabled
-                  ? 'Не давать экрану засыпать (включено)'
-                  : 'Не давать экрану засыпать (выключено)'
+                  ? 'РќРµ РґР°РІР°С‚СЊ СЌРєСЂР°РЅСѓ Р·Р°СЃС‹РїР°С‚СЊ (РІРєР»СЋС‡РµРЅРѕ)'
+                  : 'РќРµ РґР°РІР°С‚СЊ СЌРєСЂР°РЅСѓ Р·Р°СЃС‹РїР°С‚СЊ (РІС‹РєР»СЋС‡РµРЅРѕ)'
               }
               aria-pressed={wakeLock.enabled}
               title={
                 wakeLock.enabled
                   ? wakeLock.active
-                    ? 'Экран не будет блокироваться, пока эта вкладка открыта.'
-                    : 'Включено, но сейчас не активно (вкладка не на переднем плане). Активируется, как только вернётесь.'
-                  : 'Не давать экрану засыпать. Полезно на телефоне, чтобы Liv не замолкал во время разговора.'
+                    ? 'Р­РєСЂР°РЅ РЅРµ Р±СѓРґРµС‚ Р±Р»РѕРєРёСЂРѕРІР°С‚СЊСЃСЏ, РїРѕРєР° СЌС‚Р° РІРєР»Р°РґРєР° РѕС‚РєСЂС‹С‚Р°.'
+                    : 'Р’РєР»СЋС‡РµРЅРѕ, РЅРѕ СЃРµР№С‡Р°СЃ РЅРµ Р°РєС‚РёРІРЅРѕ (РІРєР»Р°РґРєР° РЅРµ РЅР° РїРµСЂРµРґРЅРµРј РїР»Р°РЅРµ). РђРєС‚РёРІРёСЂСѓРµС‚СЃСЏ, РєР°Рє С‚РѕР»СЊРєРѕ РІРµСЂРЅС‘С‚РµСЃСЊ.'
+                  : 'РќРµ РґР°РІР°С‚СЊ СЌРєСЂР°РЅСѓ Р·Р°СЃС‹РїР°С‚СЊ. РџРѕР»РµР·РЅРѕ РЅР° С‚РµР»РµС„РѕРЅРµ, С‡С‚РѕР±С‹ Liv РЅРµ Р·Р°РјРѕР»РєР°Р» РІРѕ РІСЂРµРјСЏ СЂР°Р·РіРѕРІРѕСЂР°.'
               }
             >
               <span aria-hidden="true" className="icon-eye">
@@ -1693,7 +1845,7 @@ export function LiveConsole() {
             className="secondary-button settings-trigger"
             onClick={() => setIsSettingsOpen(true)}
           >
-            ⚙️ Настройки и промт
+            вљ™пёЏ РќР°СЃС‚СЂРѕР№РєРё Рё РїСЂРѕРјС‚
           </button>
         </div>
 
@@ -1703,12 +1855,12 @@ export function LiveConsole() {
       <div className="console-grid">
         <div className="console-panel side-panel">
           <div>
-            <p className="eyebrow">Камера</p>
-            <h3>Предпросмотр</h3>
+            <p className="eyebrow">РљР°РјРµСЂР°</p>
+            <h3>РџСЂРµРґРїСЂРѕСЃРјРѕС‚СЂ</h3>
           </div>
 
           <div className="preview-frame">
-            {isCameraEnabled ? null : <span className="preview-placeholder">Камера выключена</span>}
+            {isCameraEnabled ? null : <span className="preview-placeholder">РљР°РјРµСЂР° РІС‹РєР»СЋС‡РµРЅР°</span>}
             <video
               ref={videoRef}
               autoPlay
@@ -1721,15 +1873,15 @@ export function LiveConsole() {
                 type="button"
                 className="preview-expand"
                 onClick={() => setIsCameraFloating(true)}
-                title="Развернуть обратно в плавающее окно"
+                title="Р Р°Р·РІРµСЂРЅСѓС‚СЊ РѕР±СЂР°С‚РЅРѕ РІ РїР»Р°РІР°СЋС‰РµРµ РѕРєРЅРѕ"
               >
-                Развернуть
+                Р Р°Р·РІРµСЂРЅСѓС‚СЊ
               </button>
             ) : null}
           </div>
           {isPortalReady && isCameraEnabled && isCameraFloating
             ? createPortal(
-                <div className="floating-camera" role="dialog" aria-label="Плавающее превью камеры">
+                <div className="floating-camera" role="dialog" aria-label="РџР»Р°РІР°СЋС‰РµРµ РїСЂРµРІСЊСЋ РєР°РјРµСЂС‹">
                   <video
                     ref={floatingVideoRef}
                     autoPlay
@@ -1741,27 +1893,27 @@ export function LiveConsole() {
                     type="button"
                     className="floating-camera-flip"
                     onClick={() => void switchCamera()}
-                    aria-label="Перевернуть камеру"
-                    title={cameraFacingMode === 'user' ? 'Переключить на основную' : 'Переключить на фронтальную'}
+                    aria-label="РџРµСЂРµРІРµСЂРЅСѓС‚СЊ РєР°РјРµСЂСѓ"
+                    title={cameraFacingMode === 'user' ? 'РџРµСЂРµРєР»СЋС‡РёС‚СЊ РЅР° РѕСЃРЅРѕРІРЅСѓСЋ' : 'РџРµСЂРµРєР»СЋС‡РёС‚СЊ РЅР° С„СЂРѕРЅС‚Р°Р»СЊРЅСѓСЋ'}
                   >
-                    ↺
+                    в†є
                   </button>
                   <button
                     type="button"
                     className="floating-camera-close"
                     onClick={stopCamera}
-                    aria-label="Выключить камеру"
-                    title="Выключить камеру"
+                    aria-label="Р’С‹РєР»СЋС‡РёС‚СЊ РєР°РјРµСЂСѓ"
+                    title="Р’С‹РєР»СЋС‡РёС‚СЊ РєР°РјРµСЂСѓ"
                   >
-                    ×
+                    Г—
                   </button>
                   <button
                     type="button"
                     className="floating-camera-minimize"
                     onClick={() => setIsCameraFloating(false)}
-                    title="Свернуть — камера продолжит работать"
+                    title="РЎРІРµСЂРЅСѓС‚СЊ вЂ” РєР°РјРµСЂР° РїСЂРѕРґРѕР»Р¶РёС‚ СЂР°Р±РѕС‚Р°С‚СЊ"
                   >
-                    Свернуть
+                    РЎРІРµСЂРЅСѓС‚СЊ
                   </button>
                 </div>,
                 document.body,
@@ -1772,8 +1924,8 @@ export function LiveConsole() {
         <div className="console-panel transcript-panel">
           <div className="panel-header panel-header--row">
             <div>
-              <p className="eyebrow">Диалог</p>
-              <h3>Живая расшифровка</h3>
+              <p className="eyebrow">Р”РёР°Р»РѕРі</p>
+              <h3>Р–РёРІР°СЏ СЂР°СЃС€РёС„СЂРѕРІРєР°</h3>
             </div>
             {messages.length > 0 && (
               <button
@@ -1782,16 +1934,16 @@ export function LiveConsole() {
                 onClick={() => {
                   const fullText = messages
                     .map((m) => {
-                      const label = m.role === 'assistant' ? 'Gemini' : m.role === 'user' ? 'Вы' : 'Система';
+                      const label = m.role === 'assistant' ? 'Gemini' : m.role === 'user' ? 'Р’С‹' : 'РЎРёСЃС‚РµРјР°';
                       return `${label}: ${m.text}`;
                     })
                     .join('\n\n');
                   void navigator.clipboard.writeText(fullText);
                 }}
-                aria-label="Копировать весь диалог"
-                title="Копировать весь диалог"
+                aria-label="РљРѕРїРёСЂРѕРІР°С‚СЊ РІРµСЃСЊ РґРёР°Р»РѕРі"
+                title="РљРѕРїРёСЂРѕРІР°С‚СЊ РІРµСЃСЊ РґРёР°Р»РѕРі"
               >
-                <span aria-hidden="true">📋</span> Копировать всё
+                <span aria-hidden="true">рџ“‹</span> РљРѕРїРёСЂРѕРІР°С‚СЊ РІСЃС‘
               </button>
             )}
           </div>
@@ -1810,7 +1962,7 @@ export function LiveConsole() {
           >
             {messages.length === 0 ? (
               <div className="empty-state">
-                Запустите сессию и говорите, печатайте или включите камеру.
+                Р—Р°РїСѓСЃС‚РёС‚Рµ СЃРµСЃСЃРёСЋ Рё РіРѕРІРѕСЂРёС‚Рµ, РїРµС‡Р°С‚Р°Р№С‚Рµ РёР»Рё РІРєР»СЋС‡РёС‚Рµ РєР°РјРµСЂСѓ.
               </div>
             ) : (
               messages.map((message) => (
@@ -1821,34 +1973,34 @@ export function LiveConsole() {
                     onClick={() => {
                       void navigator.clipboard.writeText(message.text);
                     }}
-                    aria-label="Копировать сообщение"
-                    title="Копировать сообщение"
+                    aria-label="РљРѕРїРёСЂРѕРІР°С‚СЊ СЃРѕРѕР±С‰РµРЅРёРµ"
+                    title="РљРѕРїРёСЂРѕРІР°С‚СЊ СЃРѕРѕР±С‰РµРЅРёРµ"
                   >
-                    <span aria-hidden="true">📋</span>
+                    <span aria-hidden="true">рџ“‹</span>
                   </button>
                   <span className="message-role">
                     {message.role === 'assistant'
                       ? 'Gemini'
                       : message.role === 'user'
-                        ? 'Вы'
-                        : 'Система'}
+                        ? 'Р’С‹'
+                        : 'РЎРёСЃС‚РµРјР°'}
                   </span>
                   {message.imageDataUrl ? (
                     <img
                       src={message.imageDataUrl}
-                      alt={message.imageName || 'Прикреплённая картинка'}
+                      alt={message.imageName || 'РџСЂРёРєСЂРµРїР»С‘РЅРЅР°СЏ РєР°СЂС‚РёРЅРєР°'}
                       className="message-image"
                     />
                   ) : null}
                   <p>{message.text}</p>
-                  {message.pending ? <span className="message-pending">Слушаю...</span> : null}
+                  {message.pending ? <span className="message-pending">РЎР»СѓС€Р°СЋ...</span> : null}
                 </article>
               ))
             )}
           </div>
 
           {pendingAttachment ? (
-            <div className="composer-attachment" role="group" aria-label="Прикреплённая картинка">
+            <div className="composer-attachment" role="group" aria-label="РџСЂРёРєСЂРµРїР»С‘РЅРЅР°СЏ РєР°СЂС‚РёРЅРєР°">
               <img
                 src={pendingAttachment.dataUrl}
                 alt={pendingAttachment.name}
@@ -1859,7 +2011,7 @@ export function LiveConsole() {
                   {pendingAttachment.name}
                 </span>
                 <span className="composer-attachment-hint">
-                  Liv увидит эту картинку вместе с вашим следующим сообщением.
+                  Liv СѓРІРёРґРёС‚ СЌС‚Сѓ РєР°СЂС‚РёРЅРєСѓ РІРјРµСЃС‚Рµ СЃ РІР°С€РёРј СЃР»РµРґСѓСЋС‰РёРј СЃРѕРѕР±С‰РµРЅРёРµРј.
                 </span>
               </div>
               <button
@@ -1869,10 +2021,10 @@ export function LiveConsole() {
                   setPendingAttachment(null);
                   setAttachmentError(null);
                 }}
-                aria-label="Убрать картинку"
-                title="Убрать картинку"
+                aria-label="РЈР±СЂР°С‚СЊ РєР°СЂС‚РёРЅРєСѓ"
+                title="РЈР±СЂР°С‚СЊ РєР°СЂС‚РёРЅРєСѓ"
               >
-                ×
+                Г—
               </button>
             </div>
           ) : null}
@@ -1893,10 +2045,10 @@ export function LiveConsole() {
               className="icon-button composer-attach-button"
               onClick={() => fileInputRef.current?.click()}
               disabled={!isSessionActive}
-              aria-label="Прикрепить картинку"
-              title="Прикрепить картинку — Liv увидит её и сможет о ней рассказать."
+              aria-label="РџСЂРёРєСЂРµРїРёС‚СЊ РєР°СЂС‚РёРЅРєСѓ"
+              title="РџСЂРёРєСЂРµРїРёС‚СЊ РєР°СЂС‚РёРЅРєСѓ вЂ” Liv СѓРІРёРґРёС‚ РµС‘ Рё СЃРјРѕР¶РµС‚ Рѕ РЅРµР№ СЂР°СЃСЃРєР°Р·Р°С‚СЊ."
             >
-              <span aria-hidden="true">📎</span>
+              <span aria-hidden="true">рџ“Ћ</span>
             </button>
             <input
               value={input}
@@ -1906,7 +2058,7 @@ export function LiveConsole() {
                   handleSendText();
                 }
               }}
-              placeholder={pendingAttachment ? 'Подпишите картинку или отправьте сразу' : 'Введите сообщение'}
+              placeholder={pendingAttachment ? 'РџРѕРґРїРёС€РёС‚Рµ РєР°СЂС‚РёРЅРєСѓ РёР»Рё РѕС‚РїСЂР°РІСЊС‚Рµ СЃСЂР°Р·Сѓ' : 'Р’РІРµРґРёС‚Рµ СЃРѕРѕР±С‰РµРЅРёРµ'}
               disabled={!isSessionActive}
             />
             <button
@@ -1914,7 +2066,7 @@ export function LiveConsole() {
               onClick={handleSendText}
               disabled={!isSessionActive || (!input.trim() && !pendingAttachment)}
             >
-              Отправить
+              РћС‚РїСЂР°РІРёС‚СЊ
             </button>
           </div>
         </div>
@@ -1923,8 +2075,8 @@ export function LiveConsole() {
       <div className="console-panel events-panel">
         <div className="panel-header">
           <div>
-            <p className="eyebrow">Система</p>
-            <h3>Последние события</h3>
+            <p className="eyebrow">РЎРёСЃС‚РµРјР°</p>
+            <h3>РџРѕСЃР»РµРґРЅРёРµ СЃРѕР±С‹С‚РёСЏ</h3>
           </div>
         </div>
         <ul className="event-list">
@@ -1936,44 +2088,44 @@ export function LiveConsole() {
 
       {isPortalReady && !isSettingsOpen
         ? createPortal(
-            <div className="sticky-controls" role="toolbar" aria-label="Быстрые действия">
+            <div className="sticky-controls" role="toolbar" aria-label="Р‘С‹СЃС‚СЂС‹Рµ РґРµР№СЃС‚РІРёСЏ">
               <span
                 className={`icon-button icon-button--mini icon-button--status${isSessionActive ? ' icon-button--status-active' : ' icon-button--status-inactive'}`}
                 role="status"
-                aria-label={`Состояние сессии: ${STATUS_LABELS[status]}`}
-                title={`Состояние сессии: ${STATUS_LABELS[status]}`}
+                aria-label={`РЎРѕСЃС‚РѕСЏРЅРёРµ СЃРµСЃСЃРёРё: ${STATUS_LABELS[status]}`}
+                title={`РЎРѕСЃС‚РѕСЏРЅРёРµ СЃРµСЃСЃРёРё: ${STATUS_LABELS[status]}`}
               >
-                <span aria-hidden="true">{isSessionActive ? '✓' : '✕'}</span>
+                <span aria-hidden="true">{isSessionActive ? 'вњ“' : 'вњ•'}</span>
               </span>
               <button
                 type="button"
                 className={`icon-button icon-button--mini${isSessionRunning ? ' icon-button--on' : ''}`}
                 onClick={isSessionRunning ? stopConversation : () => void startSession()}
                 disabled={isBusy}
-                aria-label={isSessionRunning ? 'Остановить сессию' : 'Запустить сессию'}
-                title={isSessionRunning ? 'Остановить сессию' : 'Запустить сессию'}
+                aria-label={isSessionRunning ? 'РћСЃС‚Р°РЅРѕРІРёС‚СЊ СЃРµСЃСЃРёСЋ' : 'Р—Р°РїСѓСЃС‚РёС‚СЊ СЃРµСЃСЃРёСЋ'}
+                title={isSessionRunning ? 'РћСЃС‚Р°РЅРѕРІРёС‚СЊ СЃРµСЃСЃРёСЋ' : 'Р—Р°РїСѓСЃС‚РёС‚СЊ СЃРµСЃСЃРёСЋ'}
               >
-                <span aria-hidden="true">{isSessionRunning ? '⏸' : '▶'}</span>
+                <span aria-hidden="true">{isSessionRunning ? 'вЏё' : 'в–¶'}</span>
               </button>
               <button
                 type="button"
                 className={`icon-button icon-button--mini${isMicEnabled ? ' icon-button--on' : ''}`}
                 onClick={() => void handleToggleMicrophone()}
                 disabled={!isSessionActive}
-                aria-label={isMicEnabled ? 'Выключить микрофон' : 'Включить микрофон'}
-                title={isMicEnabled ? 'Микрофон включен' : 'Микрофон выключен'}
+                aria-label={isMicEnabled ? 'Р’С‹РєР»СЋС‡РёС‚СЊ РјРёРєСЂРѕС„РѕРЅ' : 'Р’РєР»СЋС‡РёС‚СЊ РјРёРєСЂРѕС„РѕРЅ'}
+                title={isMicEnabled ? 'РњРёРєСЂРѕС„РѕРЅ РІРєР»СЋС‡РµРЅ' : 'РњРёРєСЂРѕС„РѕРЅ РІС‹РєР»СЋС‡РµРЅ'}
               >
-                <span aria-hidden="true">🎤</span>
+                <span aria-hidden="true">рџЋ¤</span>
               </button>
               <button
                 type="button"
                 className={`icon-button icon-button--mini${isCameraEnabled ? ' icon-button--on' : ''}`}
                 onClick={() => void handleToggleCamera()}
                 disabled={!isSessionActive}
-                aria-label={isCameraEnabled ? 'Выключить камеру' : 'Включить камеру'}
-                title={isCameraEnabled ? 'Камера включена' : 'Камера выключена'}
+                aria-label={isCameraEnabled ? 'Р’С‹РєР»СЋС‡РёС‚СЊ РєР°РјРµСЂСѓ' : 'Р’РєР»СЋС‡РёС‚СЊ РєР°РјРµСЂСѓ'}
+                title={isCameraEnabled ? 'РљР°РјРµСЂР° РІРєР»СЋС‡РµРЅР°' : 'РљР°РјРµСЂР° РІС‹РєР»СЋС‡РµРЅР°'}
               >
-                <span aria-hidden="true">📷</span>
+                <span aria-hidden="true">рџ“·</span>
               </button>
               {canShareScreen ? (
                 <button
@@ -1981,10 +2133,10 @@ export function LiveConsole() {
                   className={`icon-button icon-button--mini${isScreenEnabled ? ' icon-button--on' : ''}`}
                   onClick={() => void handleToggleScreen()}
                   disabled={!isSessionActive}
-                  aria-label={isScreenEnabled ? 'Остановить трансляцию экрана' : 'Транслировать экран'}
-                  title={isScreenEnabled ? 'Экран транслируется' : 'Транслировать экран'}
+                  aria-label={isScreenEnabled ? 'РћСЃС‚Р°РЅРѕРІРёС‚СЊ С‚СЂР°РЅСЃР»СЏС†РёСЋ СЌРєСЂР°РЅР°' : 'РўСЂР°РЅСЃР»РёСЂРѕРІР°С‚СЊ СЌРєСЂР°РЅ'}
+                  title={isScreenEnabled ? 'Р­РєСЂР°РЅ С‚СЂР°РЅСЃР»РёСЂСѓРµС‚СЃСЏ' : 'РўСЂР°РЅСЃР»РёСЂРѕРІР°С‚СЊ СЌРєСЂР°РЅ'}
                 >
-                  <span aria-hidden="true">🖥️</span>
+                  <span aria-hidden="true">рџ–ҐпёЏ</span>
                 </button>
               ) : null}
             </div>,
@@ -2003,29 +2155,29 @@ export function LiveConsole() {
                 className="settings-drawer"
                 role="dialog"
                 aria-modal="true"
-                aria-label="Настройки и промт"
+                aria-label="РќР°СЃС‚СЂРѕР№РєРё Рё РїСЂРѕРјС‚"
                 onClick={(e) => e.stopPropagation()}
               >
                 <header className="settings-drawer-header">
-                  <h3>Настройки</h3>
+                  <h3>РќР°СЃС‚СЂРѕР№РєРё</h3>
                   <button
                     type="button"
                     className="settings-drawer-close"
                     onClick={() => setIsSettingsOpen(false)}
-                    aria-label="Закрыть"
+                    aria-label="Р—Р°РєСЂС‹С‚СЊ"
                   >
-                    ×
+                    Г—
                   </button>
                 </header>
                 <div className="settings-drawer-body">
                   <div
                     className={`preset-bar${isPresetActionsOpen ? ' preset-bar--expanded' : ''}`}
                     role="group"
-                    aria-label="Управление пресетами"
+                    aria-label="РЈРїСЂР°РІР»РµРЅРёРµ РїСЂРµСЃРµС‚Р°РјРё"
                   >
                     <div className="preset-bar-row preset-bar-row--main">
                       <label className="preset-bar-label" htmlFor="preset-bar-select">
-                        Пресет:
+                        РџСЂРµСЃРµС‚:
                       </label>
                       <select
                         id="preset-bar-select"
@@ -2034,11 +2186,11 @@ export function LiveConsole() {
                         onChange={(event) => applySelectedPresetValue(event.target.value)}
                       >
                         <option value={STANDARD_PRESET_VALUE}>
-                          {`Стандартный${activePresetName === null && isDirty ? ' • (изменён)' : ''}`}
+                          {`РЎС‚Р°РЅРґР°СЂС‚РЅС‹Р№${activePresetName === null && isDirty ? ' вЂў (РёР·РјРµРЅС‘РЅ)' : ''}`}
                         </option>
                         {presets.map((preset) => (
                           <option key={preset.name} value={preset.name}>
-                            {`${preset.name}${preset.name === activePresetName && isDirty ? ' • (изменён)' : ''}`}
+                            {`${preset.name}${preset.name === activePresetName && isDirty ? ' вЂў (РёР·РјРµРЅС‘РЅ)' : ''}`}
                           </option>
                         ))}
                       </select>
@@ -2048,25 +2200,25 @@ export function LiveConsole() {
                         onClick={() => setIsPresetActionsOpen((v) => !v)}
                         aria-expanded={isPresetActionsOpen}
                         aria-controls="preset-bar-extra"
-                        aria-label={isPresetActionsOpen ? 'Скрыть действия с пресетом' : 'Показать действия с пресетом'}
-                        title={isPresetActionsOpen ? 'Скрыть действия с пресетом' : 'Сохранить / обновить / поделиться / импорт / удалить'}
+                        aria-label={isPresetActionsOpen ? 'РЎРєСЂС‹С‚СЊ РґРµР№СЃС‚РІРёСЏ СЃ РїСЂРµСЃРµС‚РѕРј' : 'РџРѕРєР°Р·Р°С‚СЊ РґРµР№СЃС‚РІРёСЏ СЃ РїСЂРµСЃРµС‚РѕРј'}
+                        title={isPresetActionsOpen ? 'РЎРєСЂС‹С‚СЊ РґРµР№СЃС‚РІРёСЏ СЃ РїСЂРµСЃРµС‚РѕРј' : 'РЎРѕС…СЂР°РЅРёС‚СЊ / РѕР±РЅРѕРІРёС‚СЊ / РїРѕРґРµР»РёС‚СЊСЃСЏ / РёРјРїРѕСЂС‚ / СѓРґР°Р»РёС‚СЊ'}
                       >
-                        <span className="preset-bar-toggle-label">Действия</span>
-                        <span className="preset-bar-toggle-chevron" aria-hidden="true">▾</span>
+                        <span className="preset-bar-toggle-label">Р”РµР№СЃС‚РІРёСЏ</span>
+                        <span className="preset-bar-toggle-chevron" aria-hidden="true">в–ѕ</span>
                       </button>
                     </div>
                     {isPresetActionsOpen ? (
                     <div id="preset-bar-extra" className="preset-bar-extra">
                     <p className="preset-bar-hint">
-                      Пресет хранит промт + настройки модели. Меняй поля как угодно — пресет на
-                      диске не тронется, пока не нажмёшь «Обновить» или «Сохранить как новый».
-                      При переключении на другой пресет правки сбрасываются.
+                      РџСЂРµСЃРµС‚ С…СЂР°РЅРёС‚ РїСЂРѕРјС‚ + РЅР°СЃС‚СЂРѕР№РєРё РјРѕРґРµР»Рё. РњРµРЅСЏР№ РїРѕР»СЏ РєР°Рє СѓРіРѕРґРЅРѕ вЂ” РїСЂРµСЃРµС‚ РЅР°
+                      РґРёСЃРєРµ РЅРµ С‚СЂРѕРЅРµС‚СЃСЏ, РїРѕРєР° РЅРµ РЅР°Р¶РјС‘С€СЊ В«РћР±РЅРѕРІРёС‚СЊВ» РёР»Рё В«РЎРѕС…СЂР°РЅРёС‚СЊ РєР°Рє РЅРѕРІС‹Р№В».
+                      РџСЂРё РїРµСЂРµРєР»СЋС‡РµРЅРёРё РЅР° РґСЂСѓРіРѕР№ РїСЂРµСЃРµС‚ РїСЂР°РІРєРё СЃР±СЂР°СЃС‹РІР°СЋС‚СЃСЏ.
                     </p>
                     <div className="preset-bar-row preset-bar-row--save">
                       <input
                         type="text"
                         className="preset-bar-name-input"
-                        placeholder="Имя нового пресета (например: режиссёр)"
+                        placeholder="РРјСЏ РЅРѕРІРѕРіРѕ РїСЂРµСЃРµС‚Р° (РЅР°РїСЂРёРјРµСЂ: СЂРµР¶РёСЃСЃС‘СЂ)"
                         value={newPresetName}
                         onChange={(event) => setNewPresetName(event.target.value)}
                         onKeyDown={(event) => {
@@ -2075,16 +2227,16 @@ export function LiveConsole() {
                             saveAsNewPreset();
                           }
                         }}
-                        aria-label="Имя нового пресета"
+                        aria-label="РРјСЏ РЅРѕРІРѕРіРѕ РїСЂРµСЃРµС‚Р°"
                       />
                       <button
                         type="button"
                         className="secondary-button"
                         onClick={saveAsNewPreset}
                         disabled={newPresetName.trim().length === 0}
-                        title="Сохранить текущие настройки и промт как новый пресет"
+                        title="РЎРѕС…СЂР°РЅРёС‚СЊ С‚РµРєСѓС‰РёРµ РЅР°СЃС‚СЂРѕР№РєРё Рё РїСЂРѕРјС‚ РєР°Рє РЅРѕРІС‹Р№ РїСЂРµСЃРµС‚"
                       >
-                        Сохранить как новый
+                        РЎРѕС…СЂР°РЅРёС‚СЊ РєР°Рє РЅРѕРІС‹Р№
                       </button>
                       <button
                         type="button"
@@ -2093,13 +2245,13 @@ export function LiveConsole() {
                         disabled={activePresetName === null || !isDirty}
                         title={
                           activePresetName === null
-                            ? 'Сначала выбери или сохрани пресет'
+                            ? 'РЎРЅР°С‡Р°Р»Р° РІС‹Р±РµСЂРё РёР»Рё СЃРѕС…СЂР°РЅРё РїСЂРµСЃРµС‚'
                             : isDirty
-                              ? `Перезаписать пресет «${activePresetName}» текущими настройками`
-                              : 'В выбранном пресете нет несохранённых правок'
+                              ? `РџРµСЂРµР·Р°РїРёСЃР°С‚СЊ РїСЂРµСЃРµС‚ В«${activePresetName}В» С‚РµРєСѓС‰РёРјРё РЅР°СЃС‚СЂРѕР№РєР°РјРё`
+                              : 'Р’ РІС‹Р±СЂР°РЅРЅРѕРј РїСЂРµСЃРµС‚Рµ РЅРµС‚ РЅРµСЃРѕС…СЂР°РЅС‘РЅРЅС‹С… РїСЂР°РІРѕРє'
                         }
                       >
-                        {activePresetName ? `Обновить «${activePresetName}»` : 'Обновить пресет'}
+                        {activePresetName ? `РћР±РЅРѕРІРёС‚СЊ В«${activePresetName}В»` : 'РћР±РЅРѕРІРёС‚СЊ РїСЂРµСЃРµС‚'}
                       </button>
                     </div>
                     <div className="preset-bar-row preset-bar-row--actions">
@@ -2110,12 +2262,12 @@ export function LiveConsole() {
                         disabled={activePresetName === null}
                         title={
                           activePresetName === null
-                            ? 'Чтобы поделиться — сначала выбери пресет'
-                            : 'Скопировать пресет одной строкой в буфер обмена'
+                            ? 'Р§С‚РѕР±С‹ РїРѕРґРµР»РёС‚СЊСЃСЏ вЂ” СЃРЅР°С‡Р°Р»Р° РІС‹Р±РµСЂРё РїСЂРµСЃРµС‚'
+                            : 'РЎРєРѕРїРёСЂРѕРІР°С‚СЊ РїСЂРµСЃРµС‚ РѕРґРЅРѕР№ СЃС‚СЂРѕРєРѕР№ РІ Р±СѓС„РµСЂ РѕР±РјРµРЅР°'
                         }
                         aria-live="polite"
                       >
-                        {didCopyShare ? '✓ Скопировано' : 'Поделиться (скопировать)'}
+                        {didCopyShare ? 'вњ“ РЎРєРѕРїРёСЂРѕРІР°РЅРѕ' : 'РџРѕРґРµР»РёС‚СЊСЃСЏ (СЃРєРѕРїРёСЂРѕРІР°С‚СЊ)'}
                       </button>
                       <button
                         type="button"
@@ -2125,9 +2277,9 @@ export function LiveConsole() {
                           setImportError(null);
                           setIsImportOpen(true);
                         }}
-                        title="Вставить строку пресета с другого устройства"
+                        title="Р’СЃС‚Р°РІРёС‚СЊ СЃС‚СЂРѕРєСѓ РїСЂРµСЃРµС‚Р° СЃ РґСЂСѓРіРѕРіРѕ СѓСЃС‚СЂРѕР№СЃС‚РІР°"
                       >
-                        Импортировать
+                        РРјРїРѕСЂС‚РёСЂРѕРІР°С‚СЊ
                       </button>
                       <button
                         type="button"
@@ -2136,17 +2288,17 @@ export function LiveConsole() {
                         disabled={activePresetName === null}
                         title={
                           activePresetName === null
-                            ? 'Удалить можно только сохранённый пресет'
-                            : `Удалить пресет «${activePresetName}»`
+                            ? 'РЈРґР°Р»РёС‚СЊ РјРѕР¶РЅРѕ С‚РѕР»СЊРєРѕ СЃРѕС…СЂР°РЅС‘РЅРЅС‹Р№ РїСЂРµСЃРµС‚'
+                            : `РЈРґР°Р»РёС‚СЊ РїСЂРµСЃРµС‚ В«${activePresetName}В»`
                         }
                       >
-                        Удалить
+                        РЈРґР°Р»РёС‚СЊ
                       </button>
                     </div>
                     </div>
                     ) : null}
                   </div>
-                  <div className="settings-tabs" role="tablist" aria-label="Разделы настроек">
+                  <div className="settings-tabs" role="tablist" aria-label="Р Р°Р·РґРµР»С‹ РЅР°СЃС‚СЂРѕРµРє">
                     <button
                       type="button"
                       className={`settings-tab${activeSettingsSection === 'prompt' ? ' settings-tab--active' : ''}`}
@@ -2154,7 +2306,7 @@ export function LiveConsole() {
                       role="tab"
                       aria-selected={activeSettingsSection === 'prompt'}
                     >
-                      Промт модели
+                      РџСЂРѕРјС‚ РјРѕРґРµР»Рё
                     </button>
                     <button
                       type="button"
@@ -2163,7 +2315,7 @@ export function LiveConsole() {
                       role="tab"
                       aria-selected={activeSettingsSection === 'model'}
                     >
-                      Настройки модели
+                      РќР°СЃС‚СЂРѕР№РєРё РјРѕРґРµР»Рё
                     </button>
                   </div>
                   <div className="settings-tab-panel">
@@ -2175,7 +2327,7 @@ export function LiveConsole() {
                         value={systemInstruction}
                         onChange={(event) => setSystemInstruction(event.target.value)}
                         rows={8}
-                        placeholder="Например: ты коуч по английскому, всегда отвечай только по-английски..."
+                        placeholder="РќР°РїСЂРёРјРµСЂ: С‚С‹ РєРѕСѓС‡ РїРѕ Р°РЅРіР»РёР№СЃРєРѕРјСѓ, РІСЃРµРіРґР° РѕС‚РІРµС‡Р°Р№ С‚РѕР»СЊРєРѕ РїРѕ-Р°РЅРіР»РёР№СЃРєРё..."
                       />
                       <div className="system-instruction-actions">
                         <button
@@ -2183,13 +2335,13 @@ export function LiveConsole() {
                           className="secondary-button"
                           onClick={loadStandardPreset}
                           disabled={activePresetName === null && !isDirty}
-                          title="Сбросить промт И настройки модели к свежим дефолтам — как будто только что открыла приложение"
+                          title="РЎР±СЂРѕСЃРёС‚СЊ РїСЂРѕРјС‚ Р РЅР°СЃС‚СЂРѕР№РєРё РјРѕРґРµР»Рё Рє СЃРІРµР¶РёРј РґРµС„РѕР»С‚Р°Рј вЂ” РєР°Рє Р±СѓРґС‚Рѕ С‚РѕР»СЊРєРѕ С‡С‚Рѕ РѕС‚РєСЂС‹Р»Р° РїСЂРёР»РѕР¶РµРЅРёРµ"
                         >
-                          Сбросить к стандартному
+                          РЎР±СЂРѕСЃРёС‚СЊ Рє СЃС‚Р°РЅРґР°СЂС‚РЅРѕРјСѓ
                         </button>
                         <p className="system-instruction-note">
-                          Сбрасывает промт И настройки модели (температура, голос, язык, web-search,
-                          thinking) к дефолтам. Применится при следующем запуске сессии.
+                          РЎР±СЂР°СЃС‹РІР°РµС‚ РїСЂРѕРјС‚ Р РЅР°СЃС‚СЂРѕР№РєРё РјРѕРґРµР»Рё (С‚РµРјРїРµСЂР°С‚СѓСЂР°, РіРѕР»РѕСЃ, СЏР·С‹Рє, web-search,
+                          thinking) Рє РґРµС„РѕР»С‚Р°Рј. РџСЂРёРјРµРЅРёС‚СЃСЏ РїСЂРё СЃР»РµРґСѓСЋС‰РµРј Р·Р°РїСѓСЃРєРµ СЃРµСЃСЃРёРё.
                         </p>
                       </div>
                       </div>
@@ -2198,7 +2350,7 @@ export function LiveConsole() {
                     {activeSettingsSection === 'model' ? (
                       <div className="settings-panel-content settings-panel-content--grid">
                       <div className="voice-section">
-                        <label htmlFor="model-select">Модель Gemini Live:</label>
+                        <label htmlFor="model-select">РњРѕРґРµР»СЊ Gemini Live:</label>
                         <select
                           id="model-select"
                           value={model}
@@ -2209,7 +2361,7 @@ export function LiveConsole() {
                               setModel(next);
                             }
                           }}
-                          title="Выбор модели Gemini Live. Применится при следующем запуске сессии."
+                          title="Р’С‹Р±РѕСЂ РјРѕРґРµР»Рё Gemini Live. РџСЂРёРјРµРЅРёС‚СЃСЏ РїСЂРё СЃР»РµРґСѓСЋС‰РµРј Р·Р°РїСѓСЃРєРµ СЃРµСЃСЃРёРё."
                         >
                           {LIVE_MODELS.map((m) => (
                             <option key={m.id} value={m.id}>
@@ -2219,7 +2371,7 @@ export function LiveConsole() {
                         </select>
                       </div>
                       <div className="temperature-section">
-                        <label htmlFor="temperature-slider">Температура: {temperature.toFixed(1)}</label>
+                        <label htmlFor="temperature-slider">РўРµРјРїРµСЂР°С‚СѓСЂР°: {temperature.toFixed(1)}</label>
                         <input
                           id="temperature-slider"
                           type="range"
@@ -2230,12 +2382,12 @@ export function LiveConsole() {
                           onChange={(e) => setTemperature(parseFloat(e.target.value))}
                         />
                         <div className="temperature-labels">
-                          <span>0.0 (Предсказуемо)</span>
-                          <span>2.0 (Творчески)</span>
+                          <span>0.0 (РџСЂРµРґСЃРєР°Р·СѓРµРјРѕ)</span>
+                          <span>2.0 (РўРІРѕСЂС‡РµСЃРєРё)</span>
                         </div>
                       </div>
                       <div className="voice-section">
-                        <label htmlFor="voice-select">Голос:</label>
+                        <label htmlFor="voice-select">Р“РѕР»РѕСЃ:</label>
                         <select
                           id="voice-select"
                           value={voice}
@@ -2243,13 +2395,13 @@ export function LiveConsole() {
                         >
                           {LIVE_VOICES.map((v) => (
                             <option key={v.id} value={v.id}>
-                              {`${v.id} — ${v.style} (${v.gender})`}
+                              {`${v.id} вЂ” ${v.style} (${v.gender})`}
                             </option>
                           ))}
                         </select>
                       </div>
                       <div className="voice-section">
-                        <label htmlFor="language-select">Язык:</label>
+                        <label htmlFor="language-select">РЇР·С‹Рє:</label>
                         <select
                           id="language-select"
                           value={language}
@@ -2264,12 +2416,12 @@ export function LiveConsole() {
                         </select>
                         <p className="thinking-note">
                           {modelSupportsThinkingLevel(model)
-                            ? 'Применяется при следующем запуске сессии. «Авто» — модель определяет язык по твоей речи.'
-                            : 'У Gemini 2.5 (native audio) язык выбирается автоматически — явный выбор недоступен.'}
+                            ? 'РџСЂРёРјРµРЅСЏРµС‚СЃСЏ РїСЂРё СЃР»РµРґСѓСЋС‰РµРј Р·Р°РїСѓСЃРєРµ СЃРµСЃСЃРёРё. В«РђРІС‚РѕВ» вЂ” РјРѕРґРµР»СЊ РѕРїСЂРµРґРµР»СЏРµС‚ СЏР·С‹Рє РїРѕ С‚РІРѕРµР№ СЂРµС‡Рё.'
+                            : 'РЈ Gemini 2.5 (native audio) СЏР·С‹Рє РІС‹Р±РёСЂР°РµС‚СЃСЏ Р°РІС‚РѕРјР°С‚РёС‡РµСЃРєРё вЂ” СЏРІРЅС‹Р№ РІС‹Р±РѕСЂ РЅРµРґРѕСЃС‚СѓРїРµРЅ.'}
                         </p>
                       </div>
                       <div className="thinking-section" data-disabled={!thinkingLevelSupported}>
-                        <label htmlFor="thinking-level-select">Размышления модели:</label>
+                        <label htmlFor="thinking-level-select">Р Р°Р·РјС‹С€Р»РµРЅРёСЏ РјРѕРґРµР»Рё:</label>
                         <select
                           id="thinking-level-select"
                           value={thinkingLevel}
@@ -2289,8 +2441,8 @@ export function LiveConsole() {
                         </select>
                         <p className="thinking-note">
                           {thinkingLevelSupported
-                            ? 'По умолчанию «минимальные» — самая низкая задержка. Применяется при следующем запуске сессии.'
-                            : 'Недоступно для выбранной модели (Gemini 2.5 Live).'}
+                            ? 'РџРѕ СѓРјРѕР»С‡Р°РЅРёСЋ В«РјРёРЅРёРјР°Р»СЊРЅС‹РµВ» вЂ” СЃР°РјР°СЏ РЅРёР·РєР°СЏ Р·Р°РґРµСЂР¶РєР°. РџСЂРёРјРµРЅСЏРµС‚СЃСЏ РїСЂРё СЃР»РµРґСѓСЋС‰РµРј Р·Р°РїСѓСЃРєРµ СЃРµСЃСЃРёРё.'
+                            : 'РќРµРґРѕСЃС‚СѓРїРЅРѕ РґР»СЏ РІС‹Р±СЂР°РЅРЅРѕР№ РјРѕРґРµР»Рё (Gemini 2.5 Live).'}
                         </p>
                       </div>
                       <div className="search-section">
@@ -2301,18 +2453,54 @@ export function LiveConsole() {
                             checked={webSearchEnabled}
                             onChange={(event) => setWebSearchEnabled(event.target.checked)}
                           />
-                          <span>Поиск в интернете</span>
+                          <span>РџРѕРёСЃРє РІ РёРЅС‚РµСЂРЅРµС‚Рµ</span>
                         </label>
                         <p className="search-note">
-                          По умолчанию выключен. Включите, если хотите дать Gemini доступ к Google Search.
+                          РџРѕ СѓРјРѕР»С‡Р°РЅРёСЋ РІС‹РєР»СЋС‡РµРЅ. Р’РєР»СЋС‡РёС‚Рµ, РµСЃР»Рё С…РѕС‚РёС‚Рµ РґР°С‚СЊ Gemini РґРѕСЃС‚СѓРї Рє Google Search.
                         </p>
                       </div>
                       <div className="memory-section">
-                        <label>Память диалога (запасная очистка):</label>
+                        <label>Google Calendar:</label>
+                        <p className="memory-status">
+                          {googleCalendarConnected
+                            ? 'Connected in this browser. Restart the Live session so Gemini can use the calendar tool.'
+                            : 'Not connected yet. Each user connects their own Google Calendar separately.'}
+                        </p>
+                        <div className="api-key-row">
+                          <button
+                            type="button"
+                            className="secondary-button"
+                            onClick={handleConnectGoogleCalendar}
+                            disabled={isGoogleCalendarConnecting}
+                          >
+                            {isGoogleCalendarConnecting
+                              ? 'Connecting Google Calendar...'
+                              : googleCalendarConnected
+                                ? 'Reconnect Google Calendar'
+                                : 'Connect Google Calendar'}
+                          </button>
+                          <button
+                            type="button"
+                            className="secondary-button"
+                            onClick={handleDisconnectGoogleCalendar}
+                            disabled={!googleCalendarConnected && !isGoogleCalendarConnecting}
+                          >
+                            Disconnect Calendar
+                          </button>
+                        </div>
+                        <p className="thinking-note">
+                          After a new connection, restart the Gemini Live session so the tool becomes available.
+                        </p>
+                        <p className="thinking-note">
+                          If Google shows "Access blocked" while the app is in testing, add your Gmail in Google Cloud: `Google Auth Platform -> Audience -> Test users`.
+                        </p>
+                      </div>
+                      <div className="memory-section">
+                        <label>РџР°РјСЏС‚СЊ РґРёР°Р»РѕРіР° (Р·Р°РїР°СЃРЅР°СЏ РѕС‡РёСЃС‚РєР°):</label>
                         <p className="memory-status">
                           {hasResumptionHandle
-                            ? 'Есть сохранённый диалог — при запуске модель продолжит с того места.'
-                            : 'Памяти пока нет.'}
+                            ? 'Р•СЃС‚СЊ СЃРѕС…СЂР°РЅС‘РЅРЅС‹Р№ РґРёР°Р»РѕРі вЂ” РїСЂРё Р·Р°РїСѓСЃРєРµ РјРѕРґРµР»СЊ РїСЂРѕРґРѕР»Р¶РёС‚ СЃ С‚РѕРіРѕ РјРµСЃС‚Р°.'
+                            : 'РџР°РјСЏС‚Рё РїРѕРєР° РЅРµС‚.'}
                         </p>
                         <button
                           type="button"
@@ -2320,16 +2508,16 @@ export function LiveConsole() {
                           onClick={clearSessionMemory}
                           disabled={!hasResumptionHandle}
                         >
-                          Очистить память диалога
+                          РћС‡РёСЃС‚РёС‚СЊ РїР°РјСЏС‚СЊ РґРёР°Р»РѕРіР°
                         </button>
                       </div>
                       <div className="quality-section">
-                        <h3 className="quality-section-title">Трансляция экрана</h3>
+                        <h3 className="quality-section-title">РўСЂР°РЅСЃР»СЏС†РёСЏ СЌРєСЂР°РЅР°</h3>
                         <p className="quality-section-hint">
-                          Если Liv путается с мелким текстом (например, в IDE) — поднимите разрешение и/или переключитесь на PNG.
+                          Р•СЃР»Рё Liv РїСѓС‚Р°РµС‚СЃСЏ СЃ РјРµР»РєРёРј С‚РµРєСЃС‚РѕРј (РЅР°РїСЂРёРјРµСЂ, РІ IDE) вЂ” РїРѕРґРЅРёРјРёС‚Рµ СЂР°Р·СЂРµС€РµРЅРёРµ Рё/РёР»Рё РїРµСЂРµРєР»СЋС‡РёС‚РµСЃСЊ РЅР° PNG.
                         </p>
                         <div className="quality-row">
-                          <label htmlFor="screen-format-select">Формат:</label>
+                          <label htmlFor="screen-format-select">Р¤РѕСЂРјР°С‚:</label>
                           <select
                             id="screen-format-select"
                             value={screenFormat}
@@ -2348,11 +2536,11 @@ export function LiveConsole() {
                         {screenFormat === 'jpeg' ? (
                           <div className="quality-row">
                             <label htmlFor="screen-jpeg-quality-slider">
-                              Качество JPEG:{' '}
+                              РљР°С‡РµСЃС‚РІРѕ JPEG:{' '}
                               <span className="quality-row-value">
                                 {formatJpegQuality(screenJpegQuality)}
                                 {screenJpegQuality === SCREEN_JPEG_QUALITY_DEFAULT
-                                  ? ' (по умолчанию)'
+                                  ? ' (РїРѕ СѓРјРѕР»С‡Р°РЅРёСЋ)'
                                   : ''}
                               </span>
                             </label>
@@ -2375,11 +2563,11 @@ export function LiveConsole() {
                         ) : null}
                         <div className="quality-row">
                           <label htmlFor="screen-resolution-slider">
-                            Разрешение трансляции:{' '}
+                            Р Р°Р·СЂРµС€РµРЅРёРµ С‚СЂР°РЅСЃР»СЏС†РёРё:{' '}
                             <span className="quality-row-value">
                               {describeMaxLongestSide(screenMaxLongestSide)}
                               {screenMaxLongestSide === SCREEN_MAX_LONGEST_SIDE_DEFAULT
-                                ? ' (по умолчанию)'
+                                ? ' (РїРѕ СѓРјРѕР»С‡Р°РЅРёСЋ)'
                                 : ''}
                             </span>
                           </label>
@@ -2398,20 +2586,20 @@ export function LiveConsole() {
                           />
                           <div className="quality-row-scale">
                             <span>{SCREEN_MAX_LONGEST_SIDE_MIN} px</span>
-                            <span>Родное</span>
+                            <span>Р РѕРґРЅРѕРµ</span>
                           </div>
                         </div>
                         <p className="quality-section-note">
-                          Подсказка: для VS Code и подобного попробуй 1920 px и формат PNG. Изменения применятся при следующем включении трансляции.
+                          РџРѕРґСЃРєР°Р·РєР°: РґР»СЏ VS Code Рё РїРѕРґРѕР±РЅРѕРіРѕ РїРѕРїСЂРѕР±СѓР№ 1920 px Рё С„РѕСЂРјР°С‚ PNG. РР·РјРµРЅРµРЅРёСЏ РїСЂРёРјРµРЅСЏС‚СЃСЏ РїСЂРё СЃР»РµРґСѓСЋС‰РµРј РІРєР»СЋС‡РµРЅРёРё С‚СЂР°РЅСЃР»СЏС†РёРё.
                         </p>
                       </div>
                       <div className="quality-section">
-                        <h3 className="quality-section-title">Прикреплённые картинки</h3>
+                        <h3 className="quality-section-title">РџСЂРёРєСЂРµРїР»С‘РЅРЅС‹Рµ РєР°СЂС‚РёРЅРєРё</h3>
                         <p className="quality-section-hint">
-                          Влияет на скрепку 📎. Чем выше разрешение — тем лучше Liv разбирает мелкий текст на скриншотах.
+                          Р’Р»РёСЏРµС‚ РЅР° СЃРєСЂРµРїРєСѓ рџ“Ћ. Р§РµРј РІС‹С€Рµ СЂР°Р·СЂРµС€РµРЅРёРµ вЂ” С‚РµРј Р»СѓС‡С€Рµ Liv СЂР°Р·Р±РёСЂР°РµС‚ РјРµР»РєРёР№ С‚РµРєСЃС‚ РЅР° СЃРєСЂРёРЅС€РѕС‚Р°С….
                         </p>
                         <div className="quality-row">
-                          <label htmlFor="image-format-select">Формат:</label>
+                          <label htmlFor="image-format-select">Р¤РѕСЂРјР°С‚:</label>
                           <select
                             id="image-format-select"
                             value={imageAttachmentFormat}
@@ -2430,11 +2618,11 @@ export function LiveConsole() {
                         {imageAttachmentFormat === 'jpeg' ? (
                           <div className="quality-row">
                             <label htmlFor="image-jpeg-quality-slider">
-                              Качество JPEG:{' '}
+                              РљР°С‡РµСЃС‚РІРѕ JPEG:{' '}
                               <span className="quality-row-value">
                                 {formatJpegQuality(imageAttachmentJpegQuality)}
                                 {imageAttachmentJpegQuality === IMAGE_ATTACHMENT_JPEG_QUALITY_DEFAULT
-                                  ? ' (по умолчанию)'
+                                  ? ' (РїРѕ СѓРјРѕР»С‡Р°РЅРёСЋ)'
                                   : ''}
                               </span>
                             </label>
@@ -2457,11 +2645,11 @@ export function LiveConsole() {
                         ) : null}
                         <div className="quality-row">
                           <label htmlFor="image-resolution-slider">
-                            Макс. сторона:{' '}
+                            РњР°РєСЃ. СЃС‚РѕСЂРѕРЅР°:{' '}
                             <span className="quality-row-value">
                               {describeMaxLongestSide(imageAttachmentMaxLongestSide)}
                               {imageAttachmentMaxLongestSide === IMAGE_ATTACHMENT_MAX_LONGEST_SIDE_DEFAULT
-                                ? ' (по умолчанию)'
+                                ? ' (РїРѕ СѓРјРѕР»С‡Р°РЅРёСЋ)'
                                 : ''}
                             </span>
                           </label>
@@ -2480,14 +2668,14 @@ export function LiveConsole() {
                           />
                           <div className="quality-row-scale">
                             <span>{IMAGE_ATTACHMENT_MAX_LONGEST_SIDE_MIN} px</span>
-                            <span>Родное</span>
+                            <span>Р РѕРґРЅРѕРµ</span>
                           </div>
                         </div>
                       </div>
                       <div className="quality-section">
-                        <h3 className="quality-section-title">Маршрут (для стран с блокировкой)</h3>
+                        <h3 className="quality-section-title">РњР°СЂС€СЂСѓС‚ (РґР»СЏ СЃС‚СЂР°РЅ СЃ Р±Р»РѕРєРёСЂРѕРІРєРѕР№)</h3>
                         <p className="quality-section-hint">
-                          Если Google AI API не работает напрямую (Беларусь, Россия, Иран и т.п.) — пропускайте трафик через свой Cloudflare Worker. Воркер должен проксировать WebSocket в <code>generativelanguage.googleapis.com</code>.
+                          Р•СЃР»Рё Google AI API РЅРµ СЂР°Р±РѕС‚Р°РµС‚ РЅР°РїСЂСЏРјСѓСЋ (Р‘РµР»Р°СЂСѓСЃСЊ, Р РѕСЃСЃРёСЏ, РСЂР°РЅ Рё С‚.Рї.) вЂ” РїСЂРѕРїСѓСЃРєР°Р№С‚Рµ С‚СЂР°С„РёРє С‡РµСЂРµР· СЃРІРѕР№ Cloudflare Worker. Р’РѕСЂРєРµСЂ РґРѕР»Р¶РµРЅ РїСЂРѕРєСЃРёСЂРѕРІР°С‚СЊ WebSocket РІ <code>generativelanguage.googleapis.com</code>.
                         </p>
                         <label className="search-toggle" htmlFor="live-proxy-enabled">
                           <input
@@ -2496,11 +2684,11 @@ export function LiveConsole() {
                             checked={liveProxyEnabled}
                             onChange={(event) => setLiveProxyEnabled(event.target.checked)}
                           />
-                          <span>Подключаться через прокси</span>
+                          <span>РџРѕРґРєР»СЋС‡Р°С‚СЊСЃСЏ С‡РµСЂРµР· РїСЂРѕРєСЃРё</span>
                         </label>
                         <div className="quality-row">
                           <label htmlFor="live-proxy-host" className="quality-row-label">
-                            Адрес прокси
+                            РђРґСЂРµСЃ РїСЂРѕРєСЃРё
                           </label>
                           <input
                             id="live-proxy-host"
@@ -2514,12 +2702,12 @@ export function LiveConsole() {
                           />
                         </div>
                         <p className="quality-section-note">
-                          Можно вставить просто домен (<code>example.workers.dev</code>) или полный URL — лишний <code>https://</code> и слеши уберутся автоматически. Применится при следующем запуске сессии.
+                          РњРѕР¶РЅРѕ РІСЃС‚Р°РІРёС‚СЊ РїСЂРѕСЃС‚Рѕ РґРѕРјРµРЅ (<code>example.workers.dev</code>) РёР»Рё РїРѕР»РЅС‹Р№ URL вЂ” Р»РёС€РЅРёР№ <code>https://</code> Рё СЃР»РµС€Рё СѓР±РµСЂСѓС‚СЃСЏ Р°РІС‚РѕРјР°С‚РёС‡РµСЃРєРё. РџСЂРёРјРµРЅРёС‚СЃСЏ РїСЂРё СЃР»РµРґСѓСЋС‰РµРј Р·Р°РїСѓСЃРєРµ СЃРµСЃСЃРёРё.
                         </p>
                       </div>
                       <div className="api-key-panel">
                         <label className="api-key-label" htmlFor="gemini-api-key">
-                          Свой API-ключ для этого браузера
+                          РЎРІРѕР№ API-РєР»СЋС‡ РґР»СЏ СЌС‚РѕРіРѕ Р±СЂР°СѓР·РµСЂР°
                         </label>
                         <div className="api-key-row">
                           <input
@@ -2527,16 +2715,16 @@ export function LiveConsole() {
                             type="password"
                             value={apiKeyInput}
                             onChange={(event) => setApiKeyInput(event.target.value)}
-                            placeholder="Вставьте API-ключ Gemini, чтобы не использовать переменные Vercel"
+                            placeholder="Р’СЃС‚Р°РІСЊС‚Рµ API-РєР»СЋС‡ Gemini, С‡С‚РѕР±С‹ РЅРµ РёСЃРїРѕР»СЊР·РѕРІР°С‚СЊ РїРµСЂРµРјРµРЅРЅС‹Рµ Vercel"
                             autoComplete="off"
                             spellCheck={false}
                           />
                           <button className="secondary-button" onClick={handleClearApiKey} disabled={!apiKeyInput}>
-                            Очистить ключ
+                            РћС‡РёСЃС‚РёС‚СЊ РєР»СЋС‡
                           </button>
                         </div>
                         <p className="api-key-note">
-                          Если поле заполнено, приложение подключается напрямую из браузера и хранит ключ только в этом браузере.
+                          Р•СЃР»Рё РїРѕР»Рµ Р·Р°РїРѕР»РЅРµРЅРѕ, РїСЂРёР»РѕР¶РµРЅРёРµ РїРѕРґРєР»СЋС‡Р°РµС‚СЃСЏ РЅР°РїСЂСЏРјСѓСЋ РёР· Р±СЂР°СѓР·РµСЂР° Рё С…СЂР°РЅРёС‚ РєР»СЋС‡ С‚РѕР»СЊРєРѕ РІ СЌС‚РѕРј Р±СЂР°СѓР·РµСЂРµ.
                         </p>
                       </div>
                       </div>
@@ -2560,25 +2748,25 @@ export function LiveConsole() {
                 className="settings-drawer preset-import-drawer"
                 role="dialog"
                 aria-modal="true"
-                aria-label="Импорт пресета"
+                aria-label="РРјРїРѕСЂС‚ РїСЂРµСЃРµС‚Р°"
                 onClick={(e) => e.stopPropagation()}
               >
                 <header className="settings-drawer-header">
-                  <h3>Импорт пресета</h3>
+                  <h3>РРјРїРѕСЂС‚ РїСЂРµСЃРµС‚Р°</h3>
                   <button
                     type="button"
                     className="settings-drawer-close"
                     onClick={() => setIsImportOpen(false)}
-                    aria-label="Закрыть"
+                    aria-label="Р—Р°РєСЂС‹С‚СЊ"
                   >
-                    ×
+                    Г—
                   </button>
                 </header>
                 <div className="settings-drawer-body preset-import-body">
                   <p className="preset-import-hint">
-                    Вставь сюда строку, которую скопировала кнопкой «Поделиться» на другом
-                    устройстве. Она начинается с «livvv:preset:v1:» и содержит промт + все
-                    настройки модели.
+                    Р’СЃС‚Р°РІСЊ СЃСЋРґР° СЃС‚СЂРѕРєСѓ, РєРѕС‚РѕСЂСѓСЋ СЃРєРѕРїРёСЂРѕРІР°Р»Р° РєРЅРѕРїРєРѕР№ В«РџРѕРґРµР»РёС‚СЊСЃСЏВ» РЅР° РґСЂСѓРіРѕРј
+                    СѓСЃС‚СЂРѕР№СЃС‚РІРµ. РћРЅР° РЅР°С‡РёРЅР°РµС‚СЃСЏ СЃ В«livvv:preset:v1:В» Рё СЃРѕРґРµСЂР¶РёС‚ РїСЂРѕРјС‚ + РІСЃРµ
+                    РЅР°СЃС‚СЂРѕР№РєРё РјРѕРґРµР»Рё.
                   </p>
                   <textarea
                     className="preset-import-textarea"
@@ -2601,14 +2789,14 @@ export function LiveConsole() {
                       onClick={handleImportPaste}
                       disabled={importText.trim().length === 0}
                     >
-                      Импортировать и применить
+                      РРјРїРѕСЂС‚РёСЂРѕРІР°С‚СЊ Рё РїСЂРёРјРµРЅРёС‚СЊ
                     </button>
                     <button
                       type="button"
                       className="secondary-button"
                       onClick={() => setIsImportOpen(false)}
                     >
-                      Отмена
+                      РћС‚РјРµРЅР°
                     </button>
                   </div>
                 </div>
@@ -2620,3 +2808,5 @@ export function LiveConsole() {
     </section>
   );
 }
+
+

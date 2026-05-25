@@ -4,6 +4,7 @@ import {
   executeLiveFunctionCalls,
   type LiveFunctionCall,
 } from '@/lib/server/live-tools';
+import type { GoogleCalendarBrowserAuth } from '@/lib/google-calendar';
 
 export const runtime = 'nodejs';
 
@@ -14,12 +15,20 @@ export async function POST(request: Request) {
       ? (body.functionCalls as LiveFunctionCall[])
       : [];
     const model = isLiveModelId(body?.model) ? body.model : LIVE_MODEL_DEFAULT;
+    const googleCalendarAuth =
+      body?.googleCalendarAuth &&
+      typeof body.googleCalendarAuth === 'object' &&
+      typeof body.googleCalendarAuth.refreshToken === 'string'
+        ? (body.googleCalendarAuth as GoogleCalendarBrowserAuth)
+        : null;
 
     if (functionCalls.length === 0) {
       return NextResponse.json({ error: 'No function calls provided.' }, { status: 400 });
     }
 
-    const functionResponses = await executeLiveFunctionCalls(functionCalls, model);
+    const functionResponses = await executeLiveFunctionCalls(functionCalls, model, process.env, {
+      googleCalendarAuth,
+    });
 
     return NextResponse.json({ functionResponses });
   } catch (error) {

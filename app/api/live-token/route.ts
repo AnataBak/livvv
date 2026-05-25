@@ -14,9 +14,16 @@ export async function POST(request: Request) {
     const now = Date.now();
     const body = await request.json().catch(() => ({}));
     const webSearchEnabled = Boolean(body?.webSearchEnabled);
+    const googleCalendarEnabled = Boolean(body?.googleCalendarEnabled);
     const thinkingLevel = isLiveThinkingLevel(body?.thinkingLevel) ? body.thinkingLevel : undefined;
     const model = isLiveModelId(body?.model) ? body.model : LIVE_MODEL_DEFAULT;
-    const config = buildLiveTokenConfig(now, webSearchEnabled, thinkingLevel, model);
+    const config = buildLiveTokenConfig(
+      now,
+      webSearchEnabled,
+      thinkingLevel,
+      model,
+      googleCalendarEnabled,
+    );
     const client = new GoogleGenAI({ apiKey: getGeminiApiKey() });
     const token = await client.authTokens.create({
       config,
