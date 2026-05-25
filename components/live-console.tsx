@@ -12,7 +12,10 @@ import { useWakeLock } from '@/lib/client/use-wake-lock';
 import {
   GOOGLE_CALENDAR_AUTH_STORAGE_KEY,
   GOOGLE_CALENDAR_CREATE_EVENT_FUNCTION_NAME,
+  GOOGLE_CALENDAR_DELETE_EVENT_FUNCTION_NAME,
+  GOOGLE_CALENDAR_LIST_EVENTS_FUNCTION_NAME,
   GOOGLE_CALENDAR_OAUTH_MESSAGE_TYPE,
+  GOOGLE_CALENDAR_UPDATE_EVENT_FUNCTION_NAME,
   type GoogleCalendarBrowserAuth,
 } from '@/lib/google-calendar';
 import {
@@ -452,8 +455,17 @@ export function LiveConsole() {
           if (event.functionCalls.some((call) => call.name === TAVILY_SEARCH_FUNCTION_NAME)) {
             appendEvent('Модель запросила Tavily-поиск.');
           }
-          if (event.functionCalls.some((call) => call.name === GOOGLE_CALENDAR_CREATE_EVENT_FUNCTION_NAME)) {
-            appendEvent('Модель запросила создание события в Google Calendar.');
+          if (
+            event.functionCalls.some((call) =>
+              [
+                GOOGLE_CALENDAR_CREATE_EVENT_FUNCTION_NAME,
+                GOOGLE_CALENDAR_LIST_EVENTS_FUNCTION_NAME,
+                GOOGLE_CALENDAR_UPDATE_EVENT_FUNCTION_NAME,
+                GOOGLE_CALENDAR_DELETE_EVENT_FUNCTION_NAME,
+              ].includes(call.name),
+            )
+          ) {
+            appendEvent('Модель использует инструменты Google Calendar.');
           }
           return;
         case 'input-transcription':
@@ -2461,11 +2473,6 @@ export function LiveConsole() {
                       </div>
                       <div className="memory-section">
                         <label>Google Calendar:</label>
-                        <p className="memory-status">
-                          {googleCalendarConnected
-                            ? 'Подключён в этом браузере. Перезапустите Live-сессию, чтобы Gemini смог использовать календарь.'
-                            : 'Пока не подключён. Каждый пользователь подключает свой Google Calendar отдельно.'}
-                        </p>
                         <div className="api-key-row">
                           <button
                             type="button"
@@ -2488,9 +2495,6 @@ export function LiveConsole() {
                             Отключить календарь
                           </button>
                         </div>
-                        <p className="thinking-note">
-                          После нового подключения перезапустите сессию Gemini Live, чтобы инструмент стал доступен.
-                        </p>
                         <p className="thinking-note">
                           Если Google показывает "Access blocked" во время тестирования приложения,
                           добавьте свой Gmail в Google Cloud:{' '}

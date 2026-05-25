@@ -5,7 +5,10 @@ import {
 } from '@/lib/live-session-config';
 import {
   GOOGLE_CALENDAR_CREATE_EVENT_FUNCTION_NAME,
+  GOOGLE_CALENDAR_DELETE_EVENT_FUNCTION_NAME,
   GOOGLE_CALENDAR_DEFAULT_ID,
+  GOOGLE_CALENDAR_LIST_EVENTS_FUNCTION_NAME,
+  GOOGLE_CALENDAR_UPDATE_EVENT_FUNCTION_NAME,
   type GoogleCalendarBrowserAuth,
 } from '@/lib/google-calendar';
 
@@ -200,6 +203,31 @@ type GoogleCalendarCreateEventArgs = {
   calendarId?: string;
 };
 
+type GoogleCalendarListEventsArgs = {
+  timeMin?: string;
+  timeMax?: string;
+  query?: string;
+  maxResults: number;
+  calendarId?: string;
+};
+
+type GoogleCalendarUpdateEventArgs = {
+  eventId: string;
+  title?: string;
+  description?: string;
+  location?: string;
+  startDateTime?: string;
+  endDateTime?: string;
+  durationMinutes?: number;
+  timeZone?: string;
+  calendarId?: string;
+};
+
+type GoogleCalendarDeleteEventArgs = {
+  eventId: string;
+  calendarId?: string;
+};
+
 function normalizeGoogleCalendarCreateEventArgs(
   args: Record<string, unknown>,
 ): GoogleCalendarCreateEventArgs {
@@ -253,6 +281,133 @@ function ensureGoogleCalendarAuth(
   }
 
   return auth;
+}
+
+function normalizeGoogleCalendarListEventsArgs(
+  args: Record<string, unknown>,
+): GoogleCalendarListEventsArgs {
+  const timeMin = typeof args.timeMin === 'string' ? args.timeMin.trim() : undefined;
+  const timeMax = typeof args.timeMax === 'string' ? args.timeMax.trim() : undefined;
+
+  if (timeMin && Number.isNaN(Date.parse(timeMin))) {
+    throw new Error('Google Calendar timeMin must be a valid ISO 8601 datetime.');
+  }
+
+  if (timeMax && Number.isNaN(Date.parse(timeMax))) {
+    throw new Error('Google Calendar timeMax must be a valid ISO 8601 datetime.');
+  }
+
+  if (timeMin && timeMax && !(new Date(timeMax).getTime() > new Date(timeMin).getTime())) {
+    throw new Error('Google Calendar timeMax must be after timeMin.');
+  }
+
+  const maxResultsRaw =
+    typeof args.maxResults === 'number' && Number.isFinite(args.maxResults)
+      ? Math.round(args.maxResults)
+      : 10;
+
+  return {
+    timeMin,
+    timeMax,
+    query: typeof args.query === 'string' && args.query.trim().length > 0 ? args.query.trim() : undefined,
+    maxResults: Math.min(50, Math.max(1, maxResultsRaw)),
+    calendarId: typeof args.calendarId === 'string' ? args.calendarId.trim() : undefined,
+  };
+}
+
+function normalizeGoogleCalendarUpdateEventArgs(
+  args: Record<string, unknown>,
+): GoogleCalendarUpdateEventArgs {
+  const eventId = typeof args.eventId === 'string' ? args.eventId.trim() : '';
+
+  if (!eventId) {
+    throw new Error('Google Calendar update requires a non-empty eventId.');
+  }
+
+  const startDateTime =
+    typeof args.startDateTime === 'string' && args.startDateTime.trim().length > 0
+      ? args.startDateTime.trim()
+      : undefined;
+  const endDateTime =
+    typeof args.endDateTime === 'string' && args.endDateTime.trim().length > 0
+      ? args.endDateTime.trim()
+      : undefined;
+
+  if (startDateTime && Number.isNaN(Date.parse(startDateTime))) {
+    throw new Error('Google Calendar startDateTime must be a valid ISO 8601 datetime.');
+  }
+
+  if (endDateTime && Number.isNaN(Date.parse(endDateTime))) {
+    throw new Error('Google Calendar endDateTime must be a valid ISO 8601 datetime.');
+  }
+
+  if (startDateTime && endDateTime && !(new Date(endDateTime).getTime() > new Date(startDateTime).getTime())) {
+    throw new Error('Google Calendar endDateTime must be after startDateTime.');
+  }
+
+  const durationMinutes =
+    typeof args.durationMinutes === 'number' && Number.isFinite(args.durationMinutes)
+      ? Math.min(24 * 60, Math.max(1, Math.round(args.durationMinutes)))
+      : undefined;
+
+  return {
+    eventId,
+    title: typeof args.title === 'string' ? args.title.trim() : undefined,
+    description: typeof args.description === 'string' ? args.description.trim() : undefined,
+    location: typeof args.location === 'string' ? args.location.trim() : undefined,
+    startDateTime,
+    endDateTime,
+    durationMinutes,
+    timeZone: typeof args.timeZone === 'string' ? args.timeZone.trim() : undefined,
+    calendarId: typeof args.calendarId === 'string' ? args.calendarId.trim() : undefined,
+  };
+}
+
+function normalizeGoogleCalendarDeleteEventArgs(
+  args: Record<string, unknown>,
+): GoogleCalendarDeleteEventArgs {
+  const eventId = typeof args.eventId === 'string' ? args.eventId.trim() : '';
+
+  if (!eventId) {
+    throw new Error('Google Calendar delete requires a non-empty eventId.');
+  }
+
+  return {
+    eventId,
+    calendarId: typeof args.calendarId === 'string' ? args.calendarId.trim() : undefined,
+  };
+}
+
+function getGoogleCalendarApiCalendarId(
+  requestedCalendarId: string | undefined,
+  googleAuth: GoogleCalendarBrowserAuth,
+): string {
+  return encodeURIComponent(requestedCalendarId || googleAuth.calendarId || GOOGLE_CALENDAR_DEFAULT_ID);
+}
+
+type GoogleCalendarApiEvent = {
+  id?: string;
+  htmlLink?: string;
+  summary?: string;
+  description?: string;
+  location?: string;
+  status?: string;
+  start?: { dateTime?: string; timeZone?: string };
+  end?: { dateTime?: string; timeZone?: string };
+};
+
+function mapGoogleCalendarEvent(event: GoogleCalendarApiEvent) {
+  return {
+    eventId: event.id ?? null,
+    htmlLink: event.htmlLink ?? null,
+    title: event.summary ?? '',
+    description: event.description ?? null,
+    location: event.location ?? null,
+    startDateTime: event.start?.dateTime ?? null,
+    endDateTime: event.end?.dateTime ?? null,
+    timeZone: event.start?.timeZone ?? event.end?.timeZone ?? null,
+    status: event.status ?? null,
+  };
 }
 
 async function refreshGoogleCalendarAccessToken(
@@ -359,6 +514,193 @@ async function runGoogleCalendarCreateEvent(
   };
 }
 
+async function runGoogleCalendarListEvents(
+  args: Record<string, unknown>,
+  auth: GoogleCalendarBrowserAuth | null | undefined,
+  env: EnvSource = process.env,
+): Promise<Record<string, unknown>> {
+  const normalized = normalizeGoogleCalendarListEventsArgs(args);
+  const googleAuth = ensureGoogleCalendarAuth(auth);
+  const accessToken = await refreshGoogleCalendarAccessToken(googleAuth.refreshToken, env);
+  const calendarId = getGoogleCalendarApiCalendarId(normalized.calendarId, googleAuth);
+  const url = new URL(`${GOOGLE_CALENDAR_API_BASE}/calendars/${calendarId}/events`);
+
+  url.searchParams.set('singleEvents', 'true');
+  url.searchParams.set('orderBy', 'startTime');
+  url.searchParams.set('maxResults', String(normalized.maxResults));
+  if (normalized.timeMin) url.searchParams.set('timeMin', normalized.timeMin);
+  if (normalized.timeMax) url.searchParams.set('timeMax', normalized.timeMax);
+  if (normalized.query) url.searchParams.set('q', normalized.query);
+
+  const response = await fetch(url, {
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+    },
+    cache: 'no-store',
+  });
+
+  const json = (await response.json().catch(() => null)) as
+    | { items?: GoogleCalendarApiEvent[]; error?: { message?: string } }
+    | null;
+
+  if (!response.ok) {
+    const details = json?.error?.message || `HTTP ${response.status}`;
+    throw new Error(`Google Calendar list events failed: ${details}`);
+  }
+
+  const events = (json?.items ?? []).map(mapGoogleCalendarEvent);
+
+  return {
+    ok: true,
+    calendarId: decodeURIComponent(calendarId),
+    count: events.length,
+    events,
+  };
+}
+
+async function fetchGoogleCalendarEvent(
+  calendarId: string,
+  eventId: string,
+  accessToken: string,
+): Promise<GoogleCalendarApiEvent> {
+  const response = await fetch(
+    `${GOOGLE_CALENDAR_API_BASE}/calendars/${calendarId}/events/${encodeURIComponent(eventId)}`,
+    {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+      },
+      cache: 'no-store',
+    },
+  );
+
+  const json = (await response.json().catch(() => null)) as
+    | (GoogleCalendarApiEvent & { error?: { message?: string } })
+    | null;
+
+  if (!response.ok) {
+    const details = json?.error?.message || `HTTP ${response.status}`;
+    throw new Error(`Google Calendar fetch event failed: ${details}`);
+  }
+
+  return json ?? {};
+}
+
+async function runGoogleCalendarUpdateEvent(
+  args: Record<string, unknown>,
+  auth: GoogleCalendarBrowserAuth | null | undefined,
+  env: EnvSource = process.env,
+): Promise<Record<string, unknown>> {
+  const normalized = normalizeGoogleCalendarUpdateEventArgs(args);
+  const googleAuth = ensureGoogleCalendarAuth(auth);
+  const accessToken = await refreshGoogleCalendarAccessToken(googleAuth.refreshToken, env);
+  const calendarId = getGoogleCalendarApiCalendarId(normalized.calendarId, googleAuth);
+  const current = await fetchGoogleCalendarEvent(calendarId, normalized.eventId, accessToken);
+  const patch: Record<string, unknown> = {};
+
+  if (normalized.title !== undefined) patch.summary = normalized.title;
+  if (normalized.description !== undefined) patch.description = normalized.description;
+  if (normalized.location !== undefined) patch.location = normalized.location;
+
+  if (normalized.startDateTime) {
+    const start = new Date(normalized.startDateTime);
+    let endDateTime = normalized.endDateTime;
+
+    if (!endDateTime && normalized.durationMinutes !== undefined) {
+      endDateTime = new Date(start.getTime() + normalized.durationMinutes * 60_000).toISOString();
+    }
+
+    if (!endDateTime && current.start?.dateTime && current.end?.dateTime) {
+      const currentDuration = new Date(current.end.dateTime).getTime() - new Date(current.start.dateTime).getTime();
+      if (currentDuration > 0) {
+        endDateTime = new Date(start.getTime() + currentDuration).toISOString();
+      }
+    }
+
+    patch.start = {
+      dateTime: normalized.startDateTime,
+      timeZone: normalized.timeZone || current.start?.timeZone,
+    };
+
+    if (endDateTime) {
+      patch.end = {
+        dateTime: endDateTime,
+        timeZone: normalized.timeZone || current.end?.timeZone || current.start?.timeZone,
+      };
+    }
+  } else if (normalized.endDateTime) {
+    patch.end = {
+      dateTime: normalized.endDateTime,
+      timeZone: normalized.timeZone || current.end?.timeZone || current.start?.timeZone,
+    };
+  }
+
+  if (Object.keys(patch).length === 0) {
+    throw new Error('Google Calendar update requires at least one field to change.');
+  }
+
+  const response = await fetch(
+    `${GOOGLE_CALENDAR_API_BASE}/calendars/${calendarId}/events/${encodeURIComponent(normalized.eventId)}`,
+    {
+      method: 'PATCH',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(patch),
+      cache: 'no-store',
+    },
+  );
+
+  const json = (await response.json().catch(() => null)) as
+    | (GoogleCalendarApiEvent & { error?: { message?: string } })
+    | null;
+
+  if (!response.ok) {
+    const details = json?.error?.message || `HTTP ${response.status}`;
+    throw new Error(`Google Calendar update event failed: ${details}`);
+  }
+
+  return {
+    ok: true,
+    calendarId: decodeURIComponent(calendarId),
+    ...mapGoogleCalendarEvent(json ?? {}),
+  };
+}
+
+async function runGoogleCalendarDeleteEvent(
+  args: Record<string, unknown>,
+  auth: GoogleCalendarBrowserAuth | null | undefined,
+  env: EnvSource = process.env,
+): Promise<Record<string, unknown>> {
+  const normalized = normalizeGoogleCalendarDeleteEventArgs(args);
+  const googleAuth = ensureGoogleCalendarAuth(auth);
+  const accessToken = await refreshGoogleCalendarAccessToken(googleAuth.refreshToken, env);
+  const calendarId = getGoogleCalendarApiCalendarId(normalized.calendarId, googleAuth);
+  const response = await fetch(
+    `${GOOGLE_CALENDAR_API_BASE}/calendars/${calendarId}/events/${encodeURIComponent(normalized.eventId)}`,
+    {
+      method: 'DELETE',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+      },
+      cache: 'no-store',
+    },
+  );
+
+  if (!response.ok) {
+    const json = (await response.json().catch(() => null)) as { error?: { message?: string } } | null;
+    const details = json?.error?.message || `HTTP ${response.status}`;
+    throw new Error(`Google Calendar delete event failed: ${details}`);
+  }
+
+  return {
+    ok: true,
+    deleted: true,
+    eventId: normalized.eventId,
+    calendarId: decodeURIComponent(calendarId),
+  };
+}
+
 export async function executeLiveFunctionCalls(
   functionCalls: LiveFunctionCall[],
   model: LiveModelId,
@@ -412,6 +754,69 @@ export async function executeLiveFunctionCalls(
                 error instanceof Error
                   ? error.message
                   : 'Google Calendar event creation failed.',
+            },
+          };
+        }
+      }
+
+      if (call.name === GOOGLE_CALENDAR_LIST_EVENTS_FUNCTION_NAME) {
+        try {
+          const result = await runGoogleCalendarListEvents(call.args, context.googleCalendarAuth, env);
+          return {
+            id: call.id,
+            name: call.name,
+            response: result,
+          };
+        } catch (error) {
+          return {
+            id: call.id,
+            name: call.name,
+            response: {
+              ok: false,
+              error:
+                error instanceof Error ? error.message : 'Google Calendar event listing failed.',
+            },
+          };
+        }
+      }
+
+      if (call.name === GOOGLE_CALENDAR_UPDATE_EVENT_FUNCTION_NAME) {
+        try {
+          const result = await runGoogleCalendarUpdateEvent(call.args, context.googleCalendarAuth, env);
+          return {
+            id: call.id,
+            name: call.name,
+            response: result,
+          };
+        } catch (error) {
+          return {
+            id: call.id,
+            name: call.name,
+            response: {
+              ok: false,
+              error:
+                error instanceof Error ? error.message : 'Google Calendar event update failed.',
+            },
+          };
+        }
+      }
+
+      if (call.name === GOOGLE_CALENDAR_DELETE_EVENT_FUNCTION_NAME) {
+        try {
+          const result = await runGoogleCalendarDeleteEvent(call.args, context.googleCalendarAuth, env);
+          return {
+            id: call.id,
+            name: call.name,
+            response: result,
+          };
+        } catch (error) {
+          return {
+            id: call.id,
+            name: call.name,
+            response: {
+              ok: false,
+              error:
+                error instanceof Error ? error.message : 'Google Calendar event deletion failed.',
             },
           };
         }

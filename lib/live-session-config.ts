@@ -1,5 +1,8 @@
 import {
   GOOGLE_CALENDAR_CREATE_EVENT_DECLARATION,
+  GOOGLE_CALENDAR_DELETE_EVENT_DECLARATION,
+  GOOGLE_CALENDAR_LIST_EVENTS_DECLARATION,
+  GOOGLE_CALENDAR_UPDATE_EVENT_DECLARATION,
 } from '@/lib/google-calendar';
 
 export const LIVE_MODELS = [
@@ -289,7 +292,12 @@ export function buildSessionTools(
 
   if (googleCalendarEnabled) {
     tools.push({
-      functionDeclarations: [GOOGLE_CALENDAR_CREATE_EVENT_DECLARATION],
+      functionDeclarations: [
+        GOOGLE_CALENDAR_CREATE_EVENT_DECLARATION,
+        GOOGLE_CALENDAR_LIST_EVENTS_DECLARATION,
+        GOOGLE_CALENDAR_UPDATE_EVENT_DECLARATION,
+        GOOGLE_CALENDAR_DELETE_EVENT_DECLARATION,
+      ],
     });
   }
 

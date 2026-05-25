@@ -63,11 +63,20 @@ describe('live session config', () => {
 
     expect(tools).toEqual([
       {
-        functionDeclarations: [
+        functionDeclarations: expect.arrayContaining([
           expect.objectContaining({
             name: 'google_calendar_create_event',
           }),
-        ],
+          expect.objectContaining({
+            name: 'google_calendar_list_events',
+          }),
+          expect.objectContaining({
+            name: 'google_calendar_update_event',
+          }),
+          expect.objectContaining({
+            name: 'google_calendar_delete_event',
+          }),
+        ]),
       },
     ]);
   });
